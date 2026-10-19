@@ -41,6 +41,19 @@ jobs:
 
           ls "$CPP/sdl2/CMakeLists.txt" "$CPP/OpenXR-SDK/CMakeLists.txt"
 
+      # The repo does not contain the large runtime files (imagefs.txz = Linux rootfs, the Wine
+      # builds, container patterns). Without them the app cannot create a container ("+" does nothing).
+      # Take them from the official release APK, without overwriting anything already in the repo.
+      - name: Add runtime files from the official release APK
+        run: |
+          curl -fL --retry 3 -o /tmp/official.apk \
+            https://github.com/coffincolors/winlator/releases/download/cmod_v13.1/Winlator-Cmod-v13.1.1.apk
+          mkdir /tmp/official
+          unzip -q /tmp/official.apk 'assets/*' -d /tmp/official
+          cp -rn /tmp/official/assets/. app/src/main/assets/
+          ls -la app/src/main/assets | grep -E "imagefs|proton|container_pattern"
+          test -f app/src/main/assets/imagefs.txz
+
       - name: Build debug APK
         run: |
           chmod +x ./gradlew
