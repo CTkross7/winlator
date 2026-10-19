@@ -55,10 +55,21 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    // CI runners generate a new debug key per run, which makes every APK fail to update the previous one.
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     // Keep Winlator’s buildTypes
     buildTypes {
         debug {
             minifyEnabled false
+            signingConfig signingConfigs.debug
         }
         // If you have a release build type, add it here
     }
