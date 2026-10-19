@@ -148,25 +148,33 @@ public class StudioHomeFragment extends Fragment {
         }
     }
 
-    /** Studio installs itself under drive_c/users/xuser/AppData/Local/Roblox/Versions/version-xxxx/. */
+    /**
+     * Studio installs under drive_c/Program Files/Roblox/Versions/version-xxxx/ when Wine reports a system account,
+     * or under drive_c/users/xuser/AppData/Local/Roblox/Versions/ for a normal user install.
+     */
     private File findStudioExe(Container container) {
-        File dir = resolveRobloxDir(container, "Versions");
-        if (dir == null) return null;
-
-        File[] versions = dir.listFiles(File::isDirectory);
-        if (versions == null) return null;
+        File driveC = new File(container.getRootDir(), ".wine/drive_c");
 
         File best = null;
-        for (File version : versions) {
-            File exe = childIgnoreCase(version, STUDIO_EXE);
-            if (exe != null && (best == null || exe.lastModified() > best.lastModified())) best = exe;
+        for (File versionsDir : new File[]{
+                resolve(driveC, "Program Files", "Roblox", "Versions"),
+                resolve(driveC, "Program Files (x86)", "Roblox", "Versions"),
+                resolve(driveC, "users", ImageFs.USER, "AppData", "Local", "Roblox", "Versions")}) {
+            if (versionsDir == null) continue;
+
+            File[] versions = versionsDir.listFiles(File::isDirectory);
+            if (versions == null) continue;
+
+            for (File version : versions) {
+                File exe = childIgnoreCase(version, STUDIO_EXE);
+                if (exe != null && (best == null || exe.lastModified() > best.lastModified())) best = exe;
+            }
         }
         return best;
     }
 
-    private File resolveRobloxDir(Container container, String subDir) {
-        File dir = new File(container.getRootDir(), ".wine/drive_c");
-        for (String name : new String[]{"users", ImageFs.USER, "AppData", "Local", "Roblox", subDir}) {
+    private static File resolve(File dir, String... names) {
+        for (String name : names) {
             dir = childIgnoreCase(dir, name);
             if (dir == null) return null;
         }
@@ -177,15 +185,27 @@ public class StudioHomeFragment extends Fragment {
     private void exportStudioLogs(Container container) {
         final Context context = requireContext();
         Executors.newSingleThreadExecutor().execute(() -> {
-            File logsDir = resolveRobloxDir(container, "logs");
-            if (logsDir == null || countFiles(logsDir) == 0) {
-                AppUtils.showToast(context, R.string.studio_export_none);
-                return;
+            File driveC = new File(container.getRootDir(), ".wine/drive_c");
+            File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CTbloxStudio/logs");
+
+            // A system-account install writes under systemprofile instead of the user profile.
+            File[] sources = {
+                resolve(driveC, "users", ImageFs.USER, "AppData", "Local", "Roblox", "logs"),
+                resolve(driveC, "windows", "system32", "config", "systemprofile", "AppData", "Local", "Roblox", "logs")
+            };
+            String[] labels = {"user", "system"};
+
+            int copied = 0;
+            for (int i = 0; i < sources.length; i++) {
+                if (sources[i] == null || countFiles(sources[i]) == 0) continue;
+
+                File labelDir = new File(destDir, labels[i]);
+                FileUtils.copy(sources[i], labelDir);
+                copied += countFiles(labelDir);
             }
 
-            File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CTbloxStudio/logs");
-            FileUtils.copy(logsDir, destDir);
-            AppUtils.showToast(context, context.getString(R.string.studio_export_done, countFiles(destDir)));
+            if (copied == 0) AppUtils.showToast(context, R.string.studio_export_none);
+            else AppUtils.showToast(context, context.getString(R.string.studio_export_done, copied));
         });
     }
 
