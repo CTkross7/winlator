@@ -1,5 +1,6 @@
 package com.winlator.cmod;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Environment;
@@ -20,6 +21,7 @@ import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.AppPaths;
+import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.xenvironment.ImageFs;
@@ -28,6 +30,7 @@ import org.json.JSONException;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.Executors;
 
 /**
  * The only screen a user needs: create the Studio container, run the Studio installer, open Studio.
@@ -42,6 +45,7 @@ public class StudioHomeFragment extends Fragment {
     private TextView tvHint;
     private Button btAction;
     private ProgressBar pbBusy;
+    private Button btExport;
     private boolean busy;
 
     @Nullable
@@ -52,6 +56,7 @@ public class StudioHomeFragment extends Fragment {
         tvHint = view.findViewById(R.id.TVStudioHint);
         btAction = view.findViewById(R.id.BTStudioAction);
         pbBusy = view.findViewById(R.id.PBStudioBusy);
+        btExport = view.findViewById(R.id.BTStudioExport);
         return view;
     }
 
@@ -65,6 +70,8 @@ public class StudioHomeFragment extends Fragment {
     public void refresh() {
         if (!isAdded() || busy) return;
 
+        btExport.setVisibility(View.GONE);
+
         if (!ImageFs.find(requireContext()).isValid()) {
             show(R.string.studio_status_system, 0, 0, null, true);
             return;
@@ -77,6 +84,9 @@ public class StudioHomeFragment extends Fragment {
             show(R.string.studio_status_no_env, R.string.studio_action_create, 0, (v) -> createEnvironment(), false);
             return;
         }
+
+        btExport.setVisibility(View.VISIBLE);
+        btExport.setOnClickListener((v) -> exportStudioLogs(studio));
 
         File studioExe = findStudioExe(studio);
         if (studioExe != null) {
@@ -140,11 +150,8 @@ public class StudioHomeFragment extends Fragment {
 
     /** Studio installs itself under drive_c/users/xuser/AppData/Local/Roblox/Versions/version-xxxx/. */
     private File findStudioExe(Container container) {
-        File dir = new File(container.getRootDir(), ".wine/drive_c");
-        for (String name : new String[]{"users", ImageFs.USER, "AppData", "Local", "Roblox", "Versions"}) {
-            dir = childIgnoreCase(dir, name);
-            if (dir == null) return null;
-        }
+        File dir = resolveRobloxDir(container, "Versions");
+        if (dir == null) return null;
 
         File[] versions = dir.listFiles(File::isDirectory);
         if (versions == null) return null;
@@ -155,6 +162,40 @@ public class StudioHomeFragment extends Fragment {
             if (exe != null && (best == null || exe.lastModified() > best.lastModified())) best = exe;
         }
         return best;
+    }
+
+    private File resolveRobloxDir(Container container, String subDir) {
+        File dir = new File(container.getRootDir(), ".wine/drive_c");
+        for (String name : new String[]{"users", ImageFs.USER, "AppData", "Local", "Roblox", subDir}) {
+            dir = childIgnoreCase(dir, name);
+            if (dir == null) return null;
+        }
+        return dir;
+    }
+
+    /** Copies Studio's own logs into the Download folder so they can be read without a Wine shell. */
+    private void exportStudioLogs(Container container) {
+        final Context context = requireContext();
+        Executors.newSingleThreadExecutor().execute(() -> {
+            File logsDir = resolveRobloxDir(container, "logs");
+            if (logsDir == null || countFiles(logsDir) == 0) {
+                AppUtils.showToast(context, R.string.studio_export_none);
+                return;
+            }
+
+            File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CTbloxStudio/logs");
+            FileUtils.copy(logsDir, destDir);
+            AppUtils.showToast(context, context.getString(R.string.studio_export_done, countFiles(destDir)));
+        });
+    }
+
+    private static int countFiles(File dir) {
+        File[] children = dir.listFiles();
+        if (children == null) return 0;
+
+        int count = 0;
+        for (File child : children) count += child.isDirectory() ? countFiles(child) : 1;
+        return count;
     }
 
     private static File childIgnoreCase(File dir, String name) {

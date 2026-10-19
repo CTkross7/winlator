@@ -731,4 +731,7 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="studio_hint_installer">RobloxStudioInstaller.exe를 태블릿의 Download 폴더에 넣은 뒤 \'다시 확인\'을 눌러 주세요. (Wine 안에서는 D: 드라이브로 보입니다.)</string>
     <string name="studio_hint_launch">설치와 로그인은 Studio 안에서 진행됩니다. 로그인 링크는 이 앱으로 돌아옵니다.</string>
 
+    <string name="studio_action_export">Studio 로그 내보내기</string>
+    <string name="studio_export_done">로그 %1$d개를 Download/CTbloxStudio/logs 로 복사했습니다.</string>
+    <string name="studio_export_none">Studio 로그를 찾지 못했습니다. Studio를 한 번 실행한 뒤 다시 눌러 주세요.</string>
 </resources>

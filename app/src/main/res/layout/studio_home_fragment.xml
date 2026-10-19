@@ -54,5 +54,14 @@
             android:gravity="center"
             android:textSize="13sp"
             android:alpha="0.7" />
+
+        <Button
+            android:id="@+id/BTStudioExport"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/studio_action_export"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>
