@@ -2,6 +2,7 @@ package com.winlator.cmod;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
@@ -64,7 +65,18 @@ public class StudioHomeFragment extends Fragment {
     public void onStart() {
         super.onStart();
         ((AppCompatActivity)getActivity()).getSupportActionBar().setTitle(R.string.app_name);
+        ((AppCompatActivity)getActivity()).getSupportActionBar().setSubtitle(getBuildLabel());
         refresh();
+    }
+
+    private String getBuildLabel() {
+        try {
+            Context context = requireContext();
+            return "build " + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+        }
+        catch (PackageManager.NameNotFoundException e) {
+            return "";
+        }
     }
 
     public void refresh() {

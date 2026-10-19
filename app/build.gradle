@@ -32,7 +32,7 @@ android {
         targetSdkVersion 28
 
         versionCode 20
-        versionName "1.0.0"
+        versionName "1.0.0-" + (System.getenv("GITHUB_SHA") ?: "dev").take(7)
 
         // External native build from Winlator
         externalNativeBuild {
