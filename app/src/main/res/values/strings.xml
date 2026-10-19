@@ -734,4 +734,6 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="studio_action_export">Studio 로그 내보내기</string>
     <string name="studio_export_done">로그 %1$d개를 Download/CTbloxStudio/logs 로 복사했습니다.</string>
     <string name="studio_export_none">Studio 로그를 찾지 못했습니다. Studio를 한 번 실행한 뒤 다시 눌러 주세요.</string>
+    <string name="studio_apidump_off">Vulkan 호출 기록: 꺼짐</string>
+    <string name="studio_apidump_on">Vulkan 호출 기록: 켜짐</string>
 </resources>

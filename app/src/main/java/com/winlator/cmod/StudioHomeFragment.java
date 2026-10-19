@@ -2,7 +2,9 @@ package com.winlator.cmod;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
@@ -16,7 +18,9 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
 import androidx.fragment.app.Fragment;
+import androidx.preference.PreferenceManager;
 
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
@@ -40,6 +44,7 @@ public class StudioHomeFragment extends Fragment {
     private static final String TAG = "StudioHomeFragment";
     private static final String INSTALLER_PREFIX = "robloxstudioinstaller";
     private static final String STUDIO_EXE = "RobloxStudioBeta.exe";
+    private static final String PREF_API_DUMP = "studio_api_dump";
 
     private ContainerManager manager;
     private TextView tvStatus;
@@ -47,6 +52,7 @@ public class StudioHomeFragment extends Fragment {
     private Button btAction;
     private ProgressBar pbBusy;
     private Button btExport;
+    private Button btApiDump;
     private boolean busy;
 
     @Nullable
@@ -58,6 +64,7 @@ public class StudioHomeFragment extends Fragment {
         btAction = view.findViewById(R.id.BTStudioAction);
         pbBusy = view.findViewById(R.id.PBStudioBusy);
         btExport = view.findViewById(R.id.BTStudioExport);
+        btApiDump = view.findViewById(R.id.BTStudioApiDump);
         return view;
     }
 
@@ -66,6 +73,7 @@ public class StudioHomeFragment extends Fragment {
         super.onStart();
         ((AppCompatActivity)getActivity()).getSupportActionBar().setTitle(R.string.app_name);
         ((AppCompatActivity)getActivity()).getSupportActionBar().setSubtitle(getBuildLabel());
+        ((Toolbar)getActivity().findViewById(R.id.Toolbar)).setSubtitleTextColor(Color.WHITE);
         refresh();
     }
 
@@ -83,6 +91,7 @@ public class StudioHomeFragment extends Fragment {
         if (!isAdded() || busy) return;
 
         btExport.setVisibility(View.GONE);
+        btApiDump.setVisibility(View.GONE);
 
         if (!ImageFs.find(requireContext()).isValid()) {
             show(R.string.studio_status_system, 0, 0, null, true);
@@ -99,6 +108,13 @@ public class StudioHomeFragment extends Fragment {
 
         btExport.setVisibility(View.VISIBLE);
         btExport.setOnClickListener((v) -> exportStudioLogs(studio));
+        btApiDump.setVisibility(View.VISIBLE);
+        updateApiDumpButton();
+        btApiDump.setOnClickListener((v) -> {
+            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(requireContext());
+            preferences.edit().putBoolean(PREF_API_DUMP, !preferences.getBoolean(PREF_API_DUMP, false)).apply();
+            updateApiDumpButton();
+        });
 
         File studioExe = findStudioExe(studio);
         if (studioExe != null) {
@@ -256,12 +272,52 @@ public class StudioHomeFragment extends Fragment {
         return "C:" + exe.getPath().substring(driveC.length()).replace('/', '\\');
     }
 
+    private boolean isApiDumpEnabled() {
+        return PreferenceManager.getDefaultSharedPreferences(requireContext()).getBoolean(PREF_API_DUMP, false);
+    }
+
+    private void updateApiDumpButton() {
+        btApiDump.setText(isApiDumpEnabled() ? R.string.studio_apidump_on : R.string.studio_apidump_off);
+    }
+
+    /** The api_dump layer library ships in imagefs but has no manifest, so the Vulkan loader cannot find it. */
+    private void writeApiDumpManifest() {
+        File dir = new File(AppPaths.IMAGEFS + "/usr/share/vulkan/explicit_layer.d");
+        dir.mkdirs();
+
+        String manifest = "{\n" +
+                "  \"file_format_version\": \"1.0.0\",\n" +
+                "  \"layer\": {\n" +
+                "    \"name\": \"" + StudioPreset.API_DUMP_LAYER + "\",\n" +
+                "    \"type\": \"GLOBAL\",\n" +
+                "    \"library_path\": \"" + AppPaths.IMAGEFS + "/usr/lib/libVkLayer_api_dump.so\",\n" +
+                "    \"api_version\": \"1.3.0\",\n" +
+                "    \"implementation_version\": \"2\",\n" +
+                "    \"description\": \"LunarG API dump layer\"\n" +
+                "  }\n" +
+                "}\n";
+        FileUtils.writeString(new File(dir, "VkLayer_api_dump.json"), manifest);
+    }
+
     private void ensureDiagnostics(Container container) {
         EnvVars envVars = new EnvVars(container.getEnvVars());
         boolean changed = false;
         for (String[] pair : StudioPreset.DIAGNOSTIC_ENV_VARS) {
             if (!pair[1].equals(envVars.get(pair[0]))) {
                 envVars.put(pair[0], pair[1]);
+                changed = true;
+            }
+        }
+
+        boolean apiDump = isApiDumpEnabled();
+        if (apiDump) writeApiDumpManifest();
+        for (String[] pair : StudioPreset.API_DUMP_ENV_VARS) {
+            if (apiDump && !pair[1].equals(envVars.get(pair[0]))) {
+                envVars.put(pair[0], pair[1]);
+                changed = true;
+            }
+            else if (!apiDump && envVars.has(pair[0])) {
+                envVars.remove(pair[0]);
                 changed = true;
             }
         }

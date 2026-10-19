@@ -25,6 +25,18 @@ public final class StudioPreset {
         {"DXVK_LOG_PATH", "D:/"},
     };
 
+    public static final String API_DUMP_LAYER = "VK_LAYER_LUNARG_api_dump";
+
+    /** Env vars that turn on the LunarG api_dump layer shipped in imagefs; output goes to stdout, i.e. the Wine log. */
+    public static final String[][] API_DUMP_ENV_VARS = {
+        {"VK_INSTANCE_LAYERS", API_DUMP_LAYER},
+        {"VK_LOADER_LAYERS_ENABLE", API_DUMP_LAYER},
+        {"VK_APIDUMP_OUTPUT_FORMAT", "text"},
+        {"VK_APIDUMP_DETAILED", "false"},
+        {"VK_APIDUMP_NO_ADDR", "true"},
+        {"VK_APIDUMP_FLUSH", "true"},
+    };
+
     public static JSONObject buildContainerData() throws JSONException {
         JSONObject data = new JSONObject();
         data.put("name", CONTAINER_NAME);

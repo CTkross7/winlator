@@ -56,6 +56,14 @@
             android:alpha="0.7" />
 
         <Button
+            android:id="@+id/BTStudioApiDump"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/BTStudioExport"
             style="?android:attr/buttonBarButtonStyle"
             android:layout_width="wrap_content"
