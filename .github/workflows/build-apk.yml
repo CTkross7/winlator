@@ -3,7 +3,7 @@ name: Build APK
 on:
   workflow_dispatch:
   push:
-    branches: [ studio-auth-deeplink, claude/new-session-wijgev ]
+    branches: [ studio-auth-deeplink ]
 
 jobs:
   build:
