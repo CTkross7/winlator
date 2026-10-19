@@ -21,6 +21,26 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973" "cmake;3.22.1"
 
+      # The repo lists two git submodules (OpenXR-SDK, sdl2) but the sdl2 entry has no URL,
+      # so a normal submodule checkout fails. Fetch both sources by hand.
+      - name: Fetch native dependencies
+        run: |
+          CPP=app/src/main/cpp
+
+          rm -rf "$CPP/sdl2"
+          git clone --depth 1 --branch release-2.30.8 https://github.com/libsdl-org/SDL.git "$CPP/sdl2"
+          # evshim.c includes <SDL2/SDL.h>; make that path resolve inside the SDL source tree
+          ln -s . "$CPP/sdl2/include/SDL2"
+
+          rm -rf "$CPP/OpenXR-SDK"
+          mkdir "$CPP/OpenXR-SDK"
+          git -C "$CPP/OpenXR-SDK" init -q
+          git -C "$CPP/OpenXR-SDK" remote add origin https://github.com/KhronosGroup/OpenXR-SDK.git
+          git -C "$CPP/OpenXR-SDK" fetch -q --depth 1 origin 977f6675bc0057d5a54ed290cb5c71c699b1c0ab
+          git -C "$CPP/OpenXR-SDK" checkout -q FETCH_HEAD
+
+          ls "$CPP/sdl2/CMakeLists.txt" "$CPP/OpenXR-SDK/CMakeLists.txt"
+
       - name: Build debug APK
         run: |
           chmod +x ./gradlew
