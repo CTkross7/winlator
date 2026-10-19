@@ -80,7 +80,14 @@
             android:supportsPictureInPicture="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
-            android:exported="true" />
+                        android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="roblox-studio-auth" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name="com.winlator.cmod.XrActivity"
