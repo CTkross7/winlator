@@ -44,7 +44,7 @@ public class StudioHomeFragment extends Fragment {
     private static final String TAG = "StudioHomeFragment";
     private static final String INSTALLER_PREFIX = "robloxstudioinstaller";
     private static final String STUDIO_EXE = "RobloxStudioBeta.exe";
-    private static final String PREF_API_DUMP = "studio_api_dump";
+    private static final String PREF_GPU_EXPERIMENT = "studio_gpu_experiment";
 
     private ContainerManager manager;
     private TextView tvStatus;
@@ -52,7 +52,7 @@ public class StudioHomeFragment extends Fragment {
     private Button btAction;
     private ProgressBar pbBusy;
     private Button btExport;
-    private Button btApiDump;
+    private Button btExperiment;
     private boolean busy;
 
     @Nullable
@@ -64,7 +64,7 @@ public class StudioHomeFragment extends Fragment {
         btAction = view.findViewById(R.id.BTStudioAction);
         pbBusy = view.findViewById(R.id.PBStudioBusy);
         btExport = view.findViewById(R.id.BTStudioExport);
-        btApiDump = view.findViewById(R.id.BTStudioApiDump);
+        btExperiment = view.findViewById(R.id.BTStudioExperiment);
         return view;
     }
 
@@ -91,7 +91,7 @@ public class StudioHomeFragment extends Fragment {
         if (!isAdded() || busy) return;
 
         btExport.setVisibility(View.GONE);
-        btApiDump.setVisibility(View.GONE);
+        btExperiment.setVisibility(View.GONE);
 
         if (!ImageFs.find(requireContext()).isValid()) {
             show(R.string.studio_status_system, 0, 0, null, true);
@@ -108,12 +108,13 @@ public class StudioHomeFragment extends Fragment {
 
         btExport.setVisibility(View.VISIBLE);
         btExport.setOnClickListener((v) -> exportStudioLogs(studio));
-        btApiDump.setVisibility(View.VISIBLE);
-        updateApiDumpButton();
-        btApiDump.setOnClickListener((v) -> {
+        btExperiment.setVisibility(View.VISIBLE);
+        updateExperimentButton();
+        btExperiment.setOnClickListener((v) -> {
             SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(requireContext());
-            preferences.edit().putBoolean(PREF_API_DUMP, !preferences.getBoolean(PREF_API_DUMP, false)).apply();
-            updateApiDumpButton();
+            int next = (getExperimentIndex() + 1) % StudioPreset.GPU_EXPERIMENTS.length;
+            preferences.edit().putInt(PREF_GPU_EXPERIMENT, next).apply();
+            updateExperimentButton();
         });
 
         File studioExe = findStudioExe(studio);
@@ -272,43 +273,30 @@ public class StudioHomeFragment extends Fragment {
         return "C:" + exe.getPath().substring(driveC.length()).replace('/', '\\');
     }
 
-    private boolean isApiDumpEnabled() {
-        return PreferenceManager.getDefaultSharedPreferences(requireContext()).getBoolean(PREF_API_DUMP, false);
+    private int getExperimentIndex() {
+        int index = PreferenceManager.getDefaultSharedPreferences(requireContext()).getInt(PREF_GPU_EXPERIMENT, 0);
+        return index >= 0 && index < StudioPreset.GPU_EXPERIMENTS.length ? index : 0;
     }
 
-    private void updateApiDumpButton() {
-        btApiDump.setText(isApiDumpEnabled() ? R.string.studio_apidump_on : R.string.studio_apidump_off);
+    private void updateExperimentButton() {
+        int index = getExperimentIndex();
+        btExperiment.setText(getString(R.string.studio_experiment, index + 1, StudioPreset.GPU_EXPERIMENTS.length,
+                StudioPreset.GPU_EXPERIMENTS[index][0]));
     }
 
-    /** The api_dump layer library ships in imagefs but has no manifest, so the Vulkan loader cannot find it. */
-    private void writeApiDumpManifest() {
-        File vulkanDir = new File(AppPaths.IMAGEFS + "/usr/share/vulkan");
-        new File(vulkanDir, "explicit_layer.d/VkLayer_api_dump.json").delete();
+    /** DXVK overwrites its logs per run; remove the old ones so a missing file means that run did not write it. */
+    private void clearDxvkLogs() {
+        File[] files = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).listFiles();
+        if (files == null) return;
 
-        File dir = new File(vulkanDir, "implicit_layer.d");
-        dir.mkdirs();
-
-        String manifest = "{\n" +
-                "  \"file_format_version\": \"1.0.0\",\n" +
-                "  \"layer\": {\n" +
-                "    \"name\": \"" + StudioPreset.API_DUMP_LAYER + "\",\n" +
-                "    \"type\": \"GLOBAL\",\n" +
-                "    \"library_path\": \"" + AppPaths.IMAGEFS + "/usr/lib/libVkLayer_api_dump.so\",\n" +
-                "    \"api_version\": \"1.3.0\",\n" +
-                "    \"implementation_version\": \"2\",\n" +
-                "    \"description\": \"LunarG API dump layer\",\n" +
-                "    \"functions\": {\n" +
-                "      \"vkGetInstanceProcAddr\": \"vkGetInstanceProcAddr\",\n" +
-                "      \"vkGetDeviceProcAddr\": \"vkGetDeviceProcAddr\"\n" +
-                "    },\n" +
-                "    \"enable_environment\": {\"ENABLE_API_DUMP\": \"1\"},\n" +
-                "    \"disable_environment\": {\"DISABLE_API_DUMP\": \"1\"}\n" +
-                "  }\n" +
-                "}\n";
-        FileUtils.writeString(new File(dir, "VkLayer_api_dump.json"), manifest);
+        for (File file : files) {
+            if (file.isFile() && file.getName().startsWith("RobloxStudioBeta_") && file.getName().endsWith(".log")) file.delete();
+        }
     }
 
     private void ensureDiagnostics(Container container) {
+        new File(AppPaths.IMAGEFS + "/usr/share/vulkan/implicit_layer.d/VkLayer_api_dump.json").delete();
+
         EnvVars envVars = new EnvVars(container.getEnvVars());
         boolean changed = false;
         for (String[] pair : StudioPreset.DIAGNOSTIC_ENV_VARS) {
@@ -318,24 +306,23 @@ public class StudioHomeFragment extends Fragment {
             }
         }
 
-        for (String name : StudioPreset.API_DUMP_LEGACY_ENV_VARS) {
+        for (String name : StudioPreset.STALE_ENV_VARS) {
             if (envVars.has(name)) {
                 envVars.remove(name);
                 changed = true;
             }
         }
 
-        boolean apiDump = isApiDumpEnabled();
-        if (apiDump) writeApiDumpManifest();
-        for (String[] pair : StudioPreset.API_DUMP_ENV_VARS) {
-            if (apiDump && !pair[1].equals(envVars.get(pair[0]))) {
-                envVars.put(pair[0], pair[1]);
+        String blacklist = StudioPreset.GPU_EXPERIMENTS[getExperimentIndex()][1];
+        if (blacklist.isEmpty()) {
+            if (envVars.has(StudioPreset.EXTENSION_BLACKLIST_ENV)) {
+                envVars.remove(StudioPreset.EXTENSION_BLACKLIST_ENV);
                 changed = true;
             }
-            else if (!apiDump && envVars.has(pair[0])) {
-                envVars.remove(pair[0]);
-                changed = true;
-            }
+        }
+        else if (!blacklist.equals(envVars.get(StudioPreset.EXTENSION_BLACKLIST_ENV))) {
+            envVars.put(StudioPreset.EXTENSION_BLACKLIST_ENV, blacklist);
+            changed = true;
         }
 
         if (changed) {
@@ -347,6 +334,7 @@ public class StudioHomeFragment extends Fragment {
     private void launch(Container container, String shortcutName, String windowsPath) {
         try {
             ensureDiagnostics(container);
+            clearDxvkLogs();
             File desktopFile = writeShortcut(container, shortcutName, windowsPath);
 
             Intent intent = new Intent(requireContext(), XServerDisplayActivity.class);

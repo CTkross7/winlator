@@ -25,22 +25,27 @@ public final class StudioPreset {
         {"DXVK_LOG_PATH", "D:/"},
     };
 
-    public static final String API_DUMP_LAYER = "VK_LAYER_LUNARG_api_dump";
-
-    /**
-     * The loader here only picks up implicit layers (like UtilLayer), so api_dump is registered as one and
-     * switched on with ENABLE_API_DUMP. Output goes to stdout, i.e. the Wine log.
-     */
-    public static final String[][] API_DUMP_ENV_VARS = {
-        {"ENABLE_API_DUMP", "1"},
-        {"VK_APIDUMP_OUTPUT_FORMAT", "text"},
-        {"VK_APIDUMP_DETAILED", "false"},
-        {"VK_APIDUMP_NO_ADDR", "true"},
-        {"VK_APIDUMP_FLUSH", "true"},
+    /** Left behind by builds that tried to enable the Vulkan api_dump layer, which this loader never picked up. */
+    public static final String[] STALE_ENV_VARS = {
+        "VK_INSTANCE_LAYERS", "VK_LOADER_LAYERS_ENABLE", "ENABLE_API_DUMP",
+        "VK_APIDUMP_OUTPUT_FORMAT", "VK_APIDUMP_DETAILED", "VK_APIDUMP_NO_ADDR", "VK_APIDUMP_FLUSH",
     };
 
-    /** Set by an earlier build that registered api_dump as an explicit layer, which was never loaded. */
-    public static final String[] API_DUMP_LEGACY_ENV_VARS = {"VK_INSTANCE_LAYERS", "VK_LOADER_LAYERS_ENABLE"};
+    public static final String EXTENSION_BLACKLIST_ENV = "WRAPPER_EXTENSION_BLACKLIST";
+
+    /**
+     * Vulkan device extensions to hide from DXVK, one experiment at a time. DXVK reports D3D11 device creation
+     * failing right after it lists the extensions it enabled, so one of them may be advertised but not usable.
+     * Each row is {label, comma separated extension names}.
+     */
+    public static final String[][] GPU_EXPERIMENTS = {
+        {"기본(숨기지 않음)", ""},
+        {"선택 확장 전부 숨김", "VK_EXT_host_query_reset,VK_EXT_transform_feedback,VK_KHR_create_renderpass2,VK_KHR_depth_stencil_resolve,VK_KHR_driver_properties,VK_KHR_image_format_list,VK_KHR_sampler_mirror_clamp_to_edge,VK_KHR_timeline_semaphore"},
+        {"transform_feedback만", "VK_EXT_transform_feedback"},
+        {"timeline_semaphore만", "VK_KHR_timeline_semaphore"},
+        {"host_query_reset만", "VK_EXT_host_query_reset"},
+        {"renderpass2 + depth_stencil_resolve", "VK_KHR_create_renderpass2,VK_KHR_depth_stencil_resolve"},
+    };
 
     public static JSONObject buildContainerData() throws JSONException {
         JSONObject data = new JSONObject();
