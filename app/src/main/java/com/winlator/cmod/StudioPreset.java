@@ -27,15 +27,20 @@ public final class StudioPreset {
 
     public static final String API_DUMP_LAYER = "VK_LAYER_LUNARG_api_dump";
 
-    /** Env vars that turn on the LunarG api_dump layer shipped in imagefs; output goes to stdout, i.e. the Wine log. */
+    /**
+     * The loader here only picks up implicit layers (like UtilLayer), so api_dump is registered as one and
+     * switched on with ENABLE_API_DUMP. Output goes to stdout, i.e. the Wine log.
+     */
     public static final String[][] API_DUMP_ENV_VARS = {
-        {"VK_INSTANCE_LAYERS", API_DUMP_LAYER},
-        {"VK_LOADER_LAYERS_ENABLE", API_DUMP_LAYER},
+        {"ENABLE_API_DUMP", "1"},
         {"VK_APIDUMP_OUTPUT_FORMAT", "text"},
         {"VK_APIDUMP_DETAILED", "false"},
         {"VK_APIDUMP_NO_ADDR", "true"},
         {"VK_APIDUMP_FLUSH", "true"},
     };
+
+    /** Set by an earlier build that registered api_dump as an explicit layer, which was never loaded. */
+    public static final String[] API_DUMP_LEGACY_ENV_VARS = {"VK_INSTANCE_LAYERS", "VK_LOADER_LAYERS_ENABLE"};
 
     public static JSONObject buildContainerData() throws JSONException {
         JSONObject data = new JSONObject();

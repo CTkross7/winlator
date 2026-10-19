@@ -282,7 +282,10 @@ public class StudioHomeFragment extends Fragment {
 
     /** The api_dump layer library ships in imagefs but has no manifest, so the Vulkan loader cannot find it. */
     private void writeApiDumpManifest() {
-        File dir = new File(AppPaths.IMAGEFS + "/usr/share/vulkan/explicit_layer.d");
+        File vulkanDir = new File(AppPaths.IMAGEFS + "/usr/share/vulkan");
+        new File(vulkanDir, "explicit_layer.d/VkLayer_api_dump.json").delete();
+
+        File dir = new File(vulkanDir, "implicit_layer.d");
         dir.mkdirs();
 
         String manifest = "{\n" +
@@ -293,7 +296,13 @@ public class StudioHomeFragment extends Fragment {
                 "    \"library_path\": \"" + AppPaths.IMAGEFS + "/usr/lib/libVkLayer_api_dump.so\",\n" +
                 "    \"api_version\": \"1.3.0\",\n" +
                 "    \"implementation_version\": \"2\",\n" +
-                "    \"description\": \"LunarG API dump layer\"\n" +
+                "    \"description\": \"LunarG API dump layer\",\n" +
+                "    \"functions\": {\n" +
+                "      \"vkGetInstanceProcAddr\": \"vkGetInstanceProcAddr\",\n" +
+                "      \"vkGetDeviceProcAddr\": \"vkGetDeviceProcAddr\"\n" +
+                "    },\n" +
+                "    \"enable_environment\": {\"ENABLE_API_DUMP\": \"1\"},\n" +
+                "    \"disable_environment\": {\"DISABLE_API_DUMP\": \"1\"}\n" +
                 "  }\n" +
                 "}\n";
         FileUtils.writeString(new File(dir, "VkLayer_api_dump.json"), manifest);
@@ -305,6 +314,13 @@ public class StudioHomeFragment extends Fragment {
         for (String[] pair : StudioPreset.DIAGNOSTIC_ENV_VARS) {
             if (!pair[1].equals(envVars.get(pair[0]))) {
                 envVars.put(pair[0], pair[1]);
+                changed = true;
+            }
+        }
+
+        for (String name : StudioPreset.API_DUMP_LEGACY_ENV_VARS) {
+            if (envVars.has(name)) {
+                envVars.remove(name);
                 changed = true;
             }
         }
