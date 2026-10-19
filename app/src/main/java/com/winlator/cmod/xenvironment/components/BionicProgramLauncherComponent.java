@@ -1,5 +1,7 @@
 package com.winlator.cmod.xenvironment.components;
 
+import com.winlator.cmod.core.AppPaths;
+
 import android.app.Service;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -237,10 +239,10 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             String memPath;
             if (i == 0) {
                 // Player 1 uses the original, non-numbered path that is known to work.
-                memPath = "/data/data/com.winlator.cmod/files/imagefs/tmp/gamepad.mem";
+                memPath = AppPaths.IMAGEFS + "/tmp/gamepad.mem";
             } else {
                 // Players 2, 3, 4 use a 1-based index.
-                memPath = "/data/data/com.winlator.cmod/files/imagefs/tmp/gamepad" + i + ".mem";
+                memPath = AppPaths.IMAGEFS + "/tmp/gamepad" + i + ".mem";
             }
 
             File memFile = new File(memPath);

@@ -1,5 +1,7 @@
 package com.winlator.cmod.contentdialog;
 
+import com.winlator.cmod.core.AppPaths;
+
 
 
 import android.content.Context;
@@ -61,12 +63,12 @@ public class ShortcutSettingsDialog extends ContentDialog {
     private String box64Version;
 
     private static final String[] MEDIACONV_ENV_VARS = {
-            "MEDIACONV_AUDIO_DUMP_FILE=/data/data/com.winlator.cmod/files/imagefs/home/xuser/audio.dmp",
-            "MEDIACONV_VIDEO_DUMP_FILE=/data/data/com.winlator.cmod/files/imagefs/home/xuser/video.dmp",
-            "MEDIACONV_VIDEO_TRANSCODED_FILE=/data/data/com.winlator.cmod/files/imagefs/home/xuser/transcoded.mkv",
-            "MEDIACONV_AUDIO_TRANSCODED_FILE=/data/data/com.winlator.cmod/files/imagefs/home/xuser/transcoded.wav",
-            "MEDIACONV_BLANK_AUDIO_FILE=/data/data/com.winlator.cmod/files/imagefs/home/xuser/blank.wav",
-            "MEDIACONV_BLANK_VIDEO_FILE=/data/data/com.winlator.cmod/files/imagefs/home/xuser/blank.mkv",
+            "MEDIACONV_AUDIO_DUMP_FILE=" + AppPaths.IMAGEFS + "/home/xuser/audio.dmp",
+            "MEDIACONV_VIDEO_DUMP_FILE=" + AppPaths.IMAGEFS + "/home/xuser/video.dmp",
+            "MEDIACONV_VIDEO_TRANSCODED_FILE=" + AppPaths.IMAGEFS + "/home/xuser/transcoded.mkv",
+            "MEDIACONV_AUDIO_TRANSCODED_FILE=" + AppPaths.IMAGEFS + "/home/xuser/transcoded.wav",
+            "MEDIACONV_BLANK_AUDIO_FILE=" + AppPaths.IMAGEFS + "/home/xuser/blank.wav",
+            "MEDIACONV_BLANK_VIDEO_FILE=" + AppPaths.IMAGEFS + "/home/xuser/blank.mkv",
     };
 
 

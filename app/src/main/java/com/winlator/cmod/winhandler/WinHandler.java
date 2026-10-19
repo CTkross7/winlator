@@ -1,5 +1,7 @@
 package com.winlator.cmod.winhandler;
 
+import com.winlator.cmod.core.AppPaths;
+
 import static com.winlator.cmod.inputcontrols.ExternalController.TRIGGER_IS_AXIS;
 
 import android.content.Context;
@@ -164,7 +166,7 @@ public class WinHandler {
             localhost = InetAddress.getLocalHost();
 
             // P1
-            String p1Path = "/data/data/com.winlator.cmod/files/imagefs/tmp/gamepad.mem";
+            String p1Path = AppPaths.IMAGEFS + "/tmp/gamepad.mem";
             File p1 = new File(p1Path);
             p1.getParentFile().mkdirs();
             try (RandomAccessFile raf = new RandomAccessFile(p1, "rw")) {
@@ -176,7 +178,7 @@ public class WinHandler {
 
             // P2..P4
             for (int i = 0; i < extraGamepadBuffers.length; i++) {
-                String path = "/data/data/com.winlator.cmod/files/imagefs/tmp/gamepad" + (i + 1) + ".mem";
+                String path = AppPaths.IMAGEFS + "/tmp/gamepad" + (i + 1) + ".mem";
                 File f = new File(path);
                 try (RandomAccessFile raf = new RandomAccessFile(f, "rw")) {
                     raf.setLength(64);

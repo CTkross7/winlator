@@ -19,6 +19,7 @@ import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.DownloadProgressDialog;
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.core.ImageFsPathRewriter;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.core.TarCompressorUtils;
 import com.winlator.cmod.core.WineInfo;
@@ -88,6 +89,7 @@ public abstract class ImageFsInstaller {
             });
 
             if (success) {
+                ImageFsPathRewriter.rewrite(rootDir);
                 installWineFromAssets(activity);
 //                installGuestLibs(activity); // If evshim.tzst ends up being used
                 imageFs.createImgVersionFile(LATEST_VERSION);
@@ -126,6 +128,7 @@ public abstract class ImageFsInstaller {
 
 
             if (success) {
+                ImageFsPathRewriter.rewrite(rootDir);
                 installWineFromAssets(activity);
 //                installGuestLibs(activity); // If evshim.tzst ends up being used
                 imageFs.createImgVersionFile(LATEST_VERSION);

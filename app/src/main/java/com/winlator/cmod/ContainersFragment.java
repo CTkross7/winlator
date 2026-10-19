@@ -1,5 +1,7 @@
 package com.winlator.cmod;
 
+import com.winlator.cmod.core.AppPaths;
+
 import static com.winlator.cmod.core.AppUtils.showToast;
 
 import android.app.Activity;
@@ -243,7 +245,7 @@ public class ContainersFragment extends Fragment {
         // Use requireActivity() or getActivity() to get the context
         android.content.res.AssetManager assetManager = requireActivity().getAssets();
         String sourceDir = "devLibs";
-        String destDir = "/data/data/com.winlator.cmod/files/imagefs/opt/proton-9.0-arm64ec/lib/wine/aarch64-unix/";
+        String destDir = AppPaths.IMAGEFS + "/opt/proton-9.0-arm64ec/lib/wine/aarch64-unix/";
 
         try {
             // Create the destination directory if it doesn't exist
