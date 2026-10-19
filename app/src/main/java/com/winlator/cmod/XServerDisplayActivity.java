@@ -289,6 +289,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+                if (isStudioAuthIntent(getIntent())) {
+            Toast.makeText(this, "Start the container and Roblox Studio first, then retry the browser login.", Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
         AppUtils.hideSystemUI(this);
         AppUtils.keepScreenOn(this);
         setContentView(R.layout.xserver_display_activity);
@@ -879,6 +884,23 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
     }
 
+        private static boolean isStudioAuthIntent(Intent intent) {
+        if (intent == null) return false;
+        android.net.Uri data = intent.getData();
+        return data != null && "roblox-studio-auth".equalsIgnoreCase(data.getScheme());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (!isStudioAuthIntent(intent)) return;
+        if (winHandler == null) return;
+
+        String uri = intent.getData().toString();
+        String escaped = uri.replaceAll("([&|<>^])", "^$1");
+        Log.d("XServerDisplayActivity", "Forwarding Studio auth redirect to Wine");
+        winHandler.exec("cmd.exe /c start " + escaped);
+    }
 
     @Override
     public void onResume() {
