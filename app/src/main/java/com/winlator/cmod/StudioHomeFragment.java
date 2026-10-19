@@ -20,6 +20,7 @@ import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.AppPaths;
+import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.xenvironment.ImageFs;
 
@@ -182,8 +183,25 @@ public class StudioHomeFragment extends Fragment {
         return "C:" + exe.getPath().substring(driveC.length()).replace('/', '\\');
     }
 
+    private void ensureDiagnostics(Container container) {
+        EnvVars envVars = new EnvVars(container.getEnvVars());
+        boolean changed = false;
+        for (String[] pair : StudioPreset.DIAGNOSTIC_ENV_VARS) {
+            if (!pair[1].equals(envVars.get(pair[0]))) {
+                envVars.put(pair[0], pair[1]);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            container.setEnvVars(envVars.toString());
+            container.saveData();
+        }
+    }
+
     private void launch(Container container, String shortcutName, String windowsPath) {
         try {
+            ensureDiagnostics(container);
             File desktopFile = writeShortcut(container, shortcutName, windowsPath);
 
             Intent intent = new Intent(requireContext(), XServerDisplayActivity.class);

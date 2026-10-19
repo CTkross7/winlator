@@ -19,6 +19,12 @@ public final class StudioPreset {
     public static final String SCREEN_SIZE = "1280x720";
     public static final String DXVK_VERSION = "1.10.3";
 
+    /** Applied before each launch so DXVK writes its device/feature-level log to the Download folder (D: in Wine). */
+    public static final String[][] DIAGNOSTIC_ENV_VARS = {
+        {"DXVK_LOG_LEVEL", "info"},
+        {"DXVK_LOG_PATH", "D:/"},
+    };
+
     public static JSONObject buildContainerData() throws JSONException {
         JSONObject data = new JSONObject();
         data.put("name", CONTAINER_NAME);
