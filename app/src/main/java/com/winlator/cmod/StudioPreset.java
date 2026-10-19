@@ -36,15 +36,16 @@ public final class StudioPreset {
     /**
      * Vulkan device extensions to hide from DXVK, one experiment at a time. DXVK reports D3D11 device creation
      * failing right after it lists the extensions it enabled, so one of them may be advertised but not usable.
+     * VK_KHR_timeline_semaphore must stay visible: the wrapper's WSI code asserts without it and kills vkCreateInstance.
      * Each row is {label, comma separated extension names}.
      */
     public static final String[][] GPU_EXPERIMENTS = {
         {"기본(숨기지 않음)", ""},
-        {"선택 확장 전부 숨김", "VK_EXT_host_query_reset,VK_EXT_transform_feedback,VK_KHR_create_renderpass2,VK_KHR_depth_stencil_resolve,VK_KHR_driver_properties,VK_KHR_image_format_list,VK_KHR_sampler_mirror_clamp_to_edge,VK_KHR_timeline_semaphore"},
+        {"선택 확장 전부 숨김(timeline 제외)", "VK_EXT_host_query_reset,VK_EXT_transform_feedback,VK_KHR_create_renderpass2,VK_KHR_depth_stencil_resolve,VK_KHR_driver_properties,VK_KHR_image_format_list,VK_KHR_sampler_mirror_clamp_to_edge"},
         {"transform_feedback만", "VK_EXT_transform_feedback"},
-        {"timeline_semaphore만", "VK_KHR_timeline_semaphore"},
         {"host_query_reset만", "VK_EXT_host_query_reset"},
         {"renderpass2 + depth_stencil_resolve", "VK_KHR_create_renderpass2,VK_KHR_depth_stencil_resolve"},
+        {"driver_properties + image_format_list + sampler_mirror", "VK_KHR_driver_properties,VK_KHR_image_format_list,VK_KHR_sampler_mirror_clamp_to_edge"},
     };
 
     public static JSONObject buildContainerData() throws JSONException {
