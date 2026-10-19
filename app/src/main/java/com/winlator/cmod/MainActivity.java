@@ -155,7 +155,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             navigationView.setCheckedItem(R.id.main_menu_input_controls);
         } else {
             int selectedMenuItemId = intent.getIntExtra("selected_menu_item_id", 0);
-            int menuItemId = selectedMenuItemId > 0 ? selectedMenuItemId : R.id.main_menu_containers;
+            int menuItemId = selectedMenuItemId > 0 ? selectedMenuItemId : R.id.main_menu_studio;
 
             actionBar.setHomeAsUpIndicator(R.drawable.icon_action_bar_menu);
             onNavigationItemSelected(navigationView.getMenu().findItem(menuItemId));
@@ -166,6 +166,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (!waitingForPerms) {
                 ImageFsInstaller.installIfNeeded(this, () ->
                         checkForAndInstallAssetContents(() -> {
+                            refreshStudioHome();
                             if (!allAccessFilesDialogDismissed
                                     && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                                     && !Environment.isExternalStorageManager()) {
@@ -363,6 +364,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         if (requestCode == PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 ImageFsInstaller.installIfNeeded(this, () -> {
+                    refreshStudioHome();
                     if (!allAccessFilesDialogDismissed
                             && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                             && !Environment.isExternalStorageManager()) {
@@ -390,6 +392,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         } else {
             Log.d("WinActivity", "No dialog found for request code: " + requestCode);
         }
+    }
+
+    private void refreshStudioHome() {
+        Fragment fragment = getSupportFragmentManager().findFragmentById(R.id.FLFragmentContainer);
+        if (fragment instanceof StudioHomeFragment) ((StudioHomeFragment)fragment).refresh();
     }
 
     private void showSavesFragment() {
@@ -512,6 +519,9 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
 
         switch (item.getItemId()) {
+            case R.id.main_menu_studio:
+                show(new StudioHomeFragment(), false);
+                break;
             case R.id.main_menu_shortcuts:
                 show(new ShortcutsFragment(), false);  // Forward animation
                 break;

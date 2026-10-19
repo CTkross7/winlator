@@ -716,4 +716,19 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="gdi">gdi</string>
 
 
+    <string name="studio_menu">Studio</string>
+    <string name="studio_status_system">시스템 파일을 설치하는 중입니다. 잠시만 기다려 주세요.</string>
+    <string name="studio_status_no_env">Studio 환경이 아직 없습니다.</string>
+    <string name="studio_status_creating">Studio 환경을 만드는 중입니다…</string>
+    <string name="studio_status_create_failed">Studio 환경을 만들지 못했습니다. 저장 공간을 확인하고 다시 시도해 주세요.</string>
+    <string name="studio_status_not_installed">Studio가 아직 설치되지 않았습니다.</string>
+    <string name="studio_status_installer_missing">Download 폴더에서 RobloxStudioInstaller.exe를 찾지 못했습니다.</string>
+    <string name="studio_status_ready">Studio를 실행할 준비가 됐습니다.</string>
+    <string name="studio_action_create">환경 만들기</string>
+    <string name="studio_action_install">Studio 설치</string>
+    <string name="studio_action_recheck">다시 확인</string>
+    <string name="studio_action_launch">Studio 열기</string>
+    <string name="studio_hint_installer">RobloxStudioInstaller.exe를 태블릿의 Download 폴더에 넣은 뒤 \'다시 확인\'을 눌러 주세요. (Wine 안에서는 D: 드라이브로 보입니다.)</string>
+    <string name="studio_hint_launch">설치와 로그인은 Studio 안에서 진행됩니다. 로그인 링크는 이 앱으로 돌아옵니다.</string>
+
 </resources>
