@@ -137,7 +137,7 @@ public class StudioHomeFragment extends Fragment {
         }
     }
 
-    /** Studio installs itself under C:\users\xuser\AppData\Local\Roblox\Versions\version-xxxx\. */
+    /** Studio installs itself under drive_c/users/xuser/AppData/Local/Roblox/Versions/version-xxxx/. */
     private File findStudioExe(Container container) {
         File dir = new File(container.getRootDir(), ".wine/drive_c");
         for (String name : new String[]{"users", ImageFs.USER, "AppData", "Local", "Roblox", "Versions"}) {
