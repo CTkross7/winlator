@@ -736,5 +736,5 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="studio_export_none">Studio 로그를 찾지 못했습니다. Studio를 한 번 실행한 뒤 다시 눌러 주세요.</string>
     <string name="studio_experiment">GPU 실험 %1$d/%2$d: %3$s</string>
     <string name="studio_action_probe">GPU 자동 테스트</string>
-    <string name="studio_probe_running">GPU 테스트 진행 중... 끝나면 홈으로 돌아와 주세요 (실험당 최대 2분)</string>
+    <string name="studio_probe_running">GPU 테스트 진행 중... 최대 15분쯤 걸립니다. 끝나면 홈으로 돌아와 주세요</string>
 </resources>

@@ -310,6 +310,8 @@ public class StudioHomeFragment extends Fragment {
             String[][] all = StudioPreset.GPU_EXPERIMENTS;
             for (int i = 0; i < all.length; i++) list.append(i + 1).append('\t').append(all[i][0]).append('\t').append(all[i][1]).append('\n');
             list.append("C\t").append(StudioPreset.GPU_PROBE_CONTROL[0]).append('\t').append(StudioPreset.GPU_PROBE_CONTROL[1]).append('\n');
+            File studioExe = findStudioExe(container);
+            if (studioExe != null) list.append("STUDIO\t").append(toWindowsPath(container, studioExe)).append('\n');
             if (!FileUtils.writeString(new File(downloads(), StudioPreset.PROBE_EXPERIMENTS_FILE), list.toString())) throw new IOException("experiments file");
 
             AppUtils.showToast(requireContext(), R.string.studio_probe_running);
