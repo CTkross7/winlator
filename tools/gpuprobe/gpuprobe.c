@@ -1,5 +1,5 @@
 /*
- * GPU probe for CTblox Studio. Runs once inside Wine and tries D3D11 device creation (feature level 10_0, the
+ * GPU probe for CTblox Studio. Runs once inside Wine and tries D3D11 device creation (the same call Studio makes, the
  * level Studio ends up with) once per WRAPPER_EXTENSION_BLACKLIST value listed in D:\gpuprobe_experiments.txt.
  * Each attempt runs in a child process so the variable reaches the Vulkan wrapper at process start.
  * Results are appended to D:\gpuprobe_result.txt.
@@ -35,10 +35,11 @@ static int run_child(void) {
     PFN_CREATE create = (PFN_CREATE)GetProcAddress(d3d11, "D3D11CreateDevice");
     if (!create) return 0x7F000002;
 
-    const UINT levels[] = { 0xa000 /* 10_0 */ };
+    /* Same request shape as Studio: all four levels (DXVK picks the first it supports) and BGRA support. */
+    const UINT levels[] = { 0xb100 /* 11_1 */, 0xb000 /* 11_0 */, 0xa100 /* 10_1 */, 0xa000 /* 10_0 */ };
     void *device = NULL, *context = NULL;
     UINT level = 0;
-    HRESULT hr = create(NULL, 1 /* HARDWARE */, NULL, 0, levels, 1, 7, &device, &level, &context);
+    HRESULT hr = create(NULL, 1 /* HARDWARE */, NULL, 0x20 /* BGRA_SUPPORT */, levels, 4, 7, &device, &level, &context);
     if (FAILED(hr)) return (int)hr;
     printf("feature_level=0x%x\n", level);
     return 0;
