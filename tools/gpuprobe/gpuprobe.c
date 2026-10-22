@@ -12,6 +12,8 @@
  *   gpuprobe.exe child   child: env dump + Vulkan query + D3D11CreateDevice, exit code 0 = created, else HRESULT
  */
 #include <windows.h>
+#include <d3d11.h>
+#include <dxgi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -260,6 +262,98 @@ static void vulkan_query(int withDeviceTests) {
     if (withDeviceTests) device_tests(gipa, instance, device);
 }
 
+
+/* ---- Window surface tests (DXVK's "Failed to create surface") ------------------------------------------------- */
+
+static LRESULT CALLBACK probe_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) { return DefWindowProcA(h, m, w, l); }
+
+static HWND make_window(DWORD style, DWORD exStyle, HWND parent, const char *title) {
+    static int registered;
+    if (!registered) {
+        WNDCLASSA wc = {0};
+        wc.lpfnWndProc = probe_wndproc;
+        wc.hInstance = GetModuleHandleA(NULL);
+        wc.lpszClassName = "GpuProbeWnd";
+        RegisterClassA(&wc);
+        registered = 1;
+    }
+    HWND h = CreateWindowExA(exStyle, "GpuProbeWnd", title, style, 0, 0, 640, 480, parent, NULL, GetModuleHandleA(NULL), NULL);
+    if (h) { ShowWindow(h, SW_SHOW); UpdateWindow(h); }
+
+    MSG msg;
+    DWORD end = GetTickCount() + 600;
+    while (GetTickCount() < end) {
+        while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) { TranslateMessage(&msg); DispatchMessageA(&msg); }
+        Sleep(10);
+    }
+    return h;
+}
+
+typedef struct { int sType; const void *pNext; unsigned flags; HINSTANCE hinstance; HWND hwnd; } Win32SurfaceInfo;
+
+static void vulkan_surface_test(PFN_GPA gipa, void *instance, HWND hwnd, const char *label) {
+    int (WINAPI *create)(void *, const Win32SurfaceInfo *, const void *, void **) = gipa(instance, "vkCreateWin32SurfaceKHR");
+    if (!create) { log_line("    vkCreateWin32SurfaceKHR missing"); return; }
+    Win32SurfaceInfo info = { 1000009000, NULL, 0, GetModuleHandleA(NULL), hwnd };
+    void *surface = NULL;
+    int r = create(instance, &info, NULL, &surface);
+    log_line("    vkCreateWin32SurfaceKHR %-22s hwnd=%p -> %d%s", label, (void *)hwnd, r, r == 0 ? " (ok)" : "");
+}
+
+static void swapchain_test(HWND hwnd, const char *label) {
+    HMODULE d3d11 = LoadLibraryA("d3d11.dll");
+    PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN create = d3d11 ? (PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN)GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain") : NULL;
+    if (!create) { log_line("    D3D11CreateDeviceAndSwapChain missing"); return; }
+
+    DXGI_SWAP_CHAIN_DESC desc = {0};
+    desc.BufferDesc.Width = 640;
+    desc.BufferDesc.Height = 480;
+    desc.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    desc.BufferCount = 2;
+    desc.OutputWindow = hwnd;
+    desc.Windowed = TRUE;
+    desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+    const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0 };
+    IDXGISwapChain *swapChain = NULL;
+    ID3D11Device *device = NULL;
+    ID3D11DeviceContext *context = NULL;
+    D3D_FEATURE_LEVEL level = 0;
+    HRESULT hr = create(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 4, D3D11_SDK_VERSION,
+                        &desc, &swapChain, &device, &level, &context);
+    log_line("    D3D11CreateDeviceAndSwapChain %-18s -> 0x%08lx%s", label, (unsigned long)hr, SUCCEEDED(hr) ? " (ok)" : "");
+}
+
+static void surface_tests(void) {
+    log_line("  window surface tests:");
+    HMODULE vk = LoadLibraryA("vulkan-1.dll");
+    PFN_GPA gipa = vk ? (PFN_GPA)GetProcAddress(vk, "vkGetInstanceProcAddr") : NULL;
+    void *instance = NULL;
+    if (gipa) {
+        const char *exts[2] = { "VK_KHR_surface", "VK_KHR_win32_surface" };
+        InstanceInfo info = { 1 };
+        info.extCount = 2;
+        info.exts = exts;
+        int (WINAPI *createInstance)(const InstanceInfo *, const void *, void **) = gipa(NULL, "vkCreateInstance");
+        int r = createInstance ? createInstance(&info, NULL, &instance) : -1;
+        if (r != 0) { log_line("    vkCreateInstance with surface extensions = %d", r); instance = NULL; }
+    }
+
+    HWND overlapped = make_window(WS_OVERLAPPEDWINDOW, 0, NULL, "probe overlapped");
+    HWND popup = make_window(WS_POPUP, 0, NULL, "probe popup");
+    HWND child = overlapped ? make_window(WS_CHILD, 0, overlapped, "probe child") : NULL;
+
+    HWND windows[3] = { overlapped, popup, child };
+    const char *labels[3] = { "top-level window", "popup window", "child window" };
+    for (int i = 0; i < 3; i++) {
+        if (!windows[i]) { log_line("    %s: window creation failed (err=%lu)", labels[i], GetLastError()); continue; }
+        if (instance) vulkan_surface_test(gipa, instance, windows[i], labels[i]);
+        swapchain_test(windows[i], labels[i]);
+    }
+}
+
 /* ---- Child ---------------------------------------------------------------------------------------------------- */
 
 static int run_child(void) {
@@ -277,9 +371,11 @@ static int run_child(void) {
     void *device = NULL, *context = NULL;
     UINT level = 0;
     HRESULT hr = create(NULL, 1 /* HARDWARE */, NULL, 0x20 /* BGRA_SUPPORT */, levels, 4, 7, &device, &level, &context);
-    if (FAILED(hr)) return (int)hr;
-    log_line("  feature_level=0x%x", level);
-    return 0;
+    if (SUCCEEDED(hr)) log_line("  D3D11CreateDevice ok, feature_level=0x%x", level);
+    else log_line("  D3D11CreateDevice failed 0x%08lx", (unsigned long)hr);
+
+    surface_tests();
+    return FAILED(hr) ? (int)hr : 0;
 }
 
 /* ---- Parent --------------------------------------------------------------------------------------------------- */
