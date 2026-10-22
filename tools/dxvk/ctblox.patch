@@ -184,10 +184,10 @@ index 0e2808d..6b4be50 100644
      DxvkExt khrBufferDeviceAddress            = { VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,              DxvkExtMode::Disabled };
      DxvkExt khrCreateRenderPass2              = { VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,                DxvkExtMode::Optional };
 diff --git a/src/vulkan/vulkan_presenter.cpp b/src/vulkan/vulkan_presenter.cpp
-index b02869e..52c80a1 100644
+index b02869e..ee66ffd 100644
 --- a/src/vulkan/vulkan_presenter.cpp
 +++ b/src/vulkan/vulkan_presenter.cpp
-@@ -2,6 +2,153 @@
+@@ -2,6 +2,178 @@
  
  #include "../dxvk/dxvk_format.h"
  
@@ -251,8 +251,33 @@ index b02869e..52c80a1 100644
 +        return;
 +      }
 +
-+      if (!m_shown || origin.x != m_x || origin.y != m_y || width != m_width || height != m_height) {
-+        ::SetWindowPos(m_hwnd, HWND_TOPMOST, origin.x, origin.y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
++      // Keep the overlay directly above the real top-level window, but below any dialog or menu that is
++      // stacked above that window. A topmost overlay would hide Qt's login dialog and popup menus.
++      bool aboveRoot = false;
++      HWND below = m_hwnd;
++      for (int i = 0; i < 64 && below; i++) {
++        below = ::GetWindow(below, GW_HWNDNEXT);
++        if (below == root) {
++          aboveRoot = true;
++          break;
++        }
++      }
++
++      bool moved = origin.x != m_x || origin.y != m_y || width != m_width || height != m_height;
++
++      if (!m_shown || moved || !aboveRoot) {
++        HWND after = HWND_TOP;
++        UINT flags = SWP_NOACTIVATE | SWP_SHOWWINDOW;
++
++        if (!m_shown || !aboveRoot) {
++          HWND prev = ::GetWindow(root, GW_HWNDPREV);
++          if (prev)
++            after = prev;
++        } else {
++          flags |= SWP_NOZORDER;
++        }
++
++        ::SetWindowPos(m_hwnd, after, origin.x, origin.y, width, height, flags);
 +        m_shown  = true;
 +        m_x      = origin.x;
 +        m_y      = origin.y;
@@ -341,7 +366,7 @@ index b02869e..52c80a1 100644
  namespace dxvk::vk {
  
    Presenter::Presenter(
-@@ -11,6 +158,8 @@ namespace dxvk::vk {
+@@ -11,6 +183,8 @@ namespace dxvk::vk {
            PresenterDevice device,
      const PresenterDesc&  desc)
    : m_vki(vki), m_vkd(vkd), m_device(device), m_window(window) {
@@ -350,7 +375,7 @@ index b02869e..52c80a1 100644
      // As of Wine 5.9, winevulkan provides this extension, but does
      // not filter the pNext chain for VkSwapchainCreateInfoKHR properly
      // before passing it to the Linux sude, which breaks RenderDoc.
-@@ -30,6 +179,7 @@ namespace dxvk::vk {
+@@ -30,6 +204,7 @@ namespace dxvk::vk {
    Presenter::~Presenter() {
      destroySwapchain();
      destroySurface();
@@ -358,7 +383,7 @@ index b02869e..52c80a1 100644
    }
  
  
-@@ -62,6 +212,9 @@ namespace dxvk::vk {
+@@ -62,6 +237,9 @@ namespace dxvk::vk {
  
  
    VkResult Presenter::presentImage() {
@@ -368,7 +393,7 @@ index b02869e..52c80a1 100644
      PresenterSync sync = m_semaphores.at(m_frameIndex);
  
      VkPresentInfoKHR info;
-@@ -457,7 +610,33 @@ namespace dxvk::vk {
+@@ -457,7 +635,33 @@ namespace dxvk::vk {
      
      VkResult status = m_vki->vkCreateWin32SurfaceKHR(
        m_vki->instance(), &info, nullptr, &m_surface);
