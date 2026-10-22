@@ -25,7 +25,7 @@ public final class StudioPreset {
  * Bump the suffix whenever tools/dxvk changes: Winlator only re-extracts DXVK when this version string changes, and CI
  * names the archive after this constant.
  */
-    public static final String DXVK_VERSION = "1.10.3-ctblox2";
+    public static final String DXVK_VERSION = "1.10.3-ctblox3";
 
     /** Applied before each launch so DXVK writes its device/feature-level log to the Download folder (D: in Wine). */
     public static final String[][] DIAGNOSTIC_ENV_VARS = {

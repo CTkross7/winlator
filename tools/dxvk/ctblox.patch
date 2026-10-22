@@ -11,6 +11,165 @@ index 3dcad9b..460c2d9 100644
      }
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
+diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
+index 56c51a7..8dbcd77 100644
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -2,6 +2,9 @@
+ #include "d3d11_device.h"
+ #include "d3d11_swapchain.h"
+ 
++#include <fstream>
++#include <cstring>
++
+ namespace dxvk {
+ 
+   static uint16_t MapGammaControlPoint(float x) {
+@@ -261,6 +264,8 @@ namespace dxvk {
+     auto immediateContext = static_cast<D3D11ImmediateContext*>(deviceContext.ptr());
+     immediateContext->Flush();
+ 
++    DumpBackBuffer(immediateContext);
++
+     // Bump our frame id.
+     ++m_frameId;
+     
+@@ -311,6 +316,119 @@ namespace dxvk {
+   }
+ 
+ 
++  void D3D11SwapChain::DumpBackBuffer(D3D11ImmediateContext* pContext) {
++    static const uint32_t ticks[] = { 120, 600, 1800, 3600 };
++
++    m_dumpTick += 1;
++
++    if (m_dumpIndex >= 4 || m_dumpTick != ticks[m_dumpIndex])
++      return;
++
++    const uint32_t index = m_dumpIndex++;
++    const VkExtent3D extent = m_swapImage->info().extent;
++    const VkFormat format = m_swapImage->info().format;
++
++    if (extent.width < 400 || extent.height < 300)
++      return;
++
++    if (format != VK_FORMAT_B8G8R8A8_UNORM && format != VK_FORMAT_B8G8R8A8_SRGB
++     && format != VK_FORMAT_R8G8B8A8_UNORM && format != VK_FORMAT_R8G8B8A8_SRGB) {
++      Logger::warn(str::format("ctblox: back buffer dump skipped, format ", format));
++      return;
++    }
++
++    DxvkBufferCreateInfo bufferInfo;
++    bufferInfo.size   = VkDeviceSize(extent.width) * extent.height * 4;
++    bufferInfo.usage  = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++    bufferInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
++    bufferInfo.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
++
++    Rc<DxvkBuffer> buffer = m_device->createBuffer(bufferInfo,
++      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
++
++    std::string dir = env::getEnvVar("DXVK_LOG_PATH");
++    if (dir.empty())
++      dir = "D:/";
++    if (dir.back() != '/' && dir.back() != '\\')
++      dir += '/';
++
++    std::string path = str::format(dir, "ctblox_frame_", extent.width, "x", extent.height, "_", index, ".bmp");
++    const bool swapRB = format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB;
++
++    Rc<DxvkDevice> device = m_device;
++    Rc<DxvkImage> image = m_swapImage;
++    VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
++
++    auto lock = pContext->LockContext();
++
++    pContext->EmitCs([=] (DxvkContext* ctx) {
++      ctx->copyImageToBuffer(buffer, 0,
++        VkDeviceSize(extent.width) * 4,
++        VkDeviceSize(extent.width) * extent.height * 4,
++        image, layers, VkOffset3D { 0, 0, 0 }, extent);
++      ctx->flushCommandList();
++      device->waitForIdle();
++
++      const uint8_t* src = reinterpret_cast<const uint8_t*>(buffer->mapPtr(0));
++      const size_t pixels = size_t(extent.width) * extent.height;
++
++      uint64_t sum[4] = { 0, 0, 0, 0 };
++      uint32_t minV[4] = { 255, 255, 255, 255 };
++      uint32_t maxV[4] = { 0, 0, 0, 0 };
++      size_t transparent = 0;
++
++      std::vector<uint8_t> bmp(54 + pixels * 4, 0);
++      uint8_t* hdr = bmp.data();
++      uint32_t fileSize = uint32_t(bmp.size());
++      uint32_t dataOffset = 54;
++      uint32_t infoSize = 40;
++      int32_t  width = int32_t(extent.width);
++      int32_t  height = -int32_t(extent.height);
++      uint16_t planes = 1;
++      uint16_t bpp = 32;
++      hdr[0] = 'B'; hdr[1] = 'M';
++      std::memcpy(hdr + 2, &fileSize, 4);
++      std::memcpy(hdr + 10, &dataOffset, 4);
++      std::memcpy(hdr + 14, &infoSize, 4);
++      std::memcpy(hdr + 18, &width, 4);
++      std::memcpy(hdr + 22, &height, 4);
++      std::memcpy(hdr + 26, &planes, 2);
++      std::memcpy(hdr + 28, &bpp, 2);
++
++      uint8_t* dst = hdr + 54;
++      for (size_t i = 0; i < pixels; i++) {
++        uint8_t c0 = src[i * 4 + 0], c1 = src[i * 4 + 1], c2 = src[i * 4 + 2], a = src[i * 4 + 3];
++        uint8_t r = swapRB ? c0 : c2;
++        uint8_t b = swapRB ? c2 : c0;
++        uint8_t v[4] = { r, c1, b, a };
++        for (int k = 0; k < 4; k++) {
++          sum[k] += v[k];
++          minV[k] = std::min<uint32_t>(minV[k], v[k]);
++          maxV[k] = std::max<uint32_t>(maxV[k], v[k]);
++        }
++        if (a < 255)
++          transparent++;
++        dst[i * 4 + 0] = b;
++        dst[i * 4 + 1] = c1;
++        dst[i * 4 + 2] = r;
++        dst[i * 4 + 3] = 255;
++      }
++
++      std::ofstream file(path, std::ios::binary | std::ios::trunc);
++      file.write(reinterpret_cast<const char*>(bmp.data()), std::streamsize(bmp.size()));
++      file.close();
++
++      Logger::warn(str::format("ctblox: back buffer ", extent.width, "x", extent.height, " saved to ", path,
++        " avg RGBA=", sum[0] / pixels, ",", sum[1] / pixels, ",", sum[2] / pixels, ",", sum[3] / pixels,
++        " min=", minV[0], ",", minV[1], ",", minV[2], ",", minV[3],
++        " max=", maxV[0], ",", maxV[1], ",", maxV[2], ",", maxV[3],
++        " pixels with alpha<255: ", transparent));
++    });
++
++    pContext->FlushCsChunk();
++  }
++
++
+   void D3D11SwapChain::SubmitPresent(
+           D3D11ImmediateContext*  pContext,
+     const vk::PresenterSync&      Sync,
+diff --git a/src/d3d11/d3d11_swapchain.h b/src/d3d11/d3d11_swapchain.h
+index f4debea..635d8a6 100644
+--- a/src/d3d11/d3d11_swapchain.h
++++ b/src/d3d11/d3d11_swapchain.h
+@@ -116,6 +116,11 @@ namespace dxvk {
+ 
+     HRESULT PresentImage(UINT SyncInterval);
+ 
++    // ctblox: diagnostic, saves a few frames of the application's back buffer as BMP files
++    uint32_t                m_dumpTick  = 0;
++    uint32_t                m_dumpIndex = 0;
++    void DumpBackBuffer(D3D11ImmediateContext* pContext);
++
+     void SubmitPresent(
+             D3D11ImmediateContext*  pContext,
+       const vk::PresenterSync&      Sync,
 diff --git a/src/dxvk/dxvk_extensions.h b/src/dxvk/dxvk_extensions.h
 index 0e2808d..6b4be50 100644
 --- a/src/dxvk/dxvk_extensions.h
