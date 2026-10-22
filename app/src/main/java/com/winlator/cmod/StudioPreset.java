@@ -20,8 +20,10 @@ public final class StudioPreset {
     /**
  * Stock DXVK 1.10.3 with a patched d3d11.dll (tools/dxvk/build_d3d11.sh, packed by CI as dxwrapper/dxvk-1.10.3-ctblox.tzst).
  * The Mali wrapper rejects VK_EXT_transform_feedback in vkCreateDevice, which stock DXVK requires for feature level 10_0.
+ * Bump the suffix whenever tools/dxvk changes: Winlator only re-extracts DXVK when this version string changes, and CI
+ * names the archive after this constant.
  */
-    public static final String DXVK_VERSION = "1.10.3-ctblox";
+    public static final String DXVK_VERSION = "1.10.3-ctblox2";
 
     /** Applied before each launch so DXVK writes its device/feature-level log to the Download folder (D: in Wine). */
     public static final String[][] DIAGNOSTIC_ENV_VARS = {

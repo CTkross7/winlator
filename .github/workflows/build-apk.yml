@@ -63,8 +63,11 @@ jobs:
           mkdir /tmp/dxvk-pack
           tar -I zstd -xf app/src/main/assets/dxwrapper/dxvk-1.10.3.tzst -C /tmp/dxvk-pack
           cp /tmp/dxvk-out/d3d11.dll /tmp/dxvk-pack/system32/d3d11.dll
-          tar -I zstd -cf app/src/main/assets/dxwrapper/dxvk-1.10.3-ctblox.tzst -C /tmp/dxvk-pack .
-          tar -I zstd -tvf app/src/main/assets/dxwrapper/dxvk-1.10.3-ctblox.tzst
+          # The archive must be named after the version the app asks for (StudioPreset.DXVK_VERSION).
+          VER=$(grep -oP 'DXVK_VERSION = "\K[^"]+' app/src/main/java/com/winlator/cmod/StudioPreset.java)
+          echo "DXVK version: $VER"
+          tar -I zstd -cf "app/src/main/assets/dxwrapper/dxvk-$VER.tzst" -C /tmp/dxvk-pack .
+          tar -I zstd -tvf "app/src/main/assets/dxwrapper/dxvk-$VER.tzst"
 
       - name: Build GPU probe (Windows exe run inside Wine)
         run: |
