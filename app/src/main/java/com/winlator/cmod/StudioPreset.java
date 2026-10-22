@@ -17,6 +17,8 @@ public final class StudioPreset {
 
     public static final String CONTAINER_NAME = "CTblox Studio";
     public static final String SCREEN_SIZE = "1280x720";
+    /** STABILITY made Studio's main thread stall for 20s+ on the MT8788 (HangMonitor in Studio logs); PERFORMANCE trades safety for speed. */
+    public static final String BOX64_PRESET = Box86_64Preset.PERFORMANCE;
     /**
  * Stock DXVK 1.10.3 with a patched d3d11.dll (tools/dxvk/build_d3d11.sh, packed by CI as dxwrapper/dxvk-1.10.3-ctblox.tzst).
  * The Mali wrapper rejects VK_EXT_transform_feedback in vkCreateDevice, which stock DXVK requires for feature level 10_0.
@@ -67,7 +69,7 @@ public final class StudioPreset {
         data.put("screenSize", SCREEN_SIZE);
         data.put("wineVersion", WineInfo.MAIN_WINE_VERSION.identifier());
         data.put("emulator", "Box64");
-        data.put("box64Preset", Box86_64Preset.STABILITY);
+        data.put("box64Preset", BOX64_PRESET);
         data.put("graphicsDriver", Container.DEFAULT_GRAPHICS_DRIVER);
         data.put("graphicsDriverConfig", Container.DEFAULT_GRAPHICSDRIVERCONFIG);
         data.put("dxwrapper", Container.DEFAULT_DXWRAPPER);

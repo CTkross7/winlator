@@ -390,6 +390,11 @@ public class StudioHomeFragment extends Fragment {
             changed = true;
         }
 
+        if (!StudioPreset.BOX64_PRESET.equals(container.getBox64Preset())) {
+            container.setBox64Preset(StudioPreset.BOX64_PRESET);
+            changed = true;
+        }
+
         if (changed) {
             container.setEnvVars(envVars.toString());
             container.saveData();
