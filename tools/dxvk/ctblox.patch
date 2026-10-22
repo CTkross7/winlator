@@ -12,7 +12,7 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..8dbcd77 100644
+index 56c51a7..d34b44c 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
 @@ -2,6 +2,9 @@
@@ -34,7 +34,7 @@ index 56c51a7..8dbcd77 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +316,119 @@ namespace dxvk {
+@@ -311,6 +316,127 @@ namespace dxvk {
    }
  
  
@@ -145,6 +145,14 @@ index 56c51a7..8dbcd77 100644
 +        " min=", minV[0], ",", minV[1], ",", minV[2], ",", minV[3],
 +        " max=", maxV[0], ",", maxV[1], ",", maxV[2], ",", maxV[3],
 +        " pixels with alpha<255: ", transparent));
++
++      DxvkStatCounters stats = device->getStatCounters();
++      Logger::warn(str::format("ctblox: device stats draws=", stats.getCtr(DxvkStatCounter::CmdDrawCalls),
++        " dispatches=", stats.getCtr(DxvkStatCounter::CmdDispatchCalls),
++        " renderpasses=", stats.getCtr(DxvkStatCounter::CmdRenderPassCount),
++        " graphicsPipelines=", stats.getCtr(DxvkStatCounter::PipeCountGraphics),
++        " submits=", stats.getCtr(DxvkStatCounter::QueueSubmitCount),
++        " presents=", stats.getCtr(DxvkStatCounter::QueuePresentCount)));
 +    });
 +
 +    pContext->FlushCsChunk();
