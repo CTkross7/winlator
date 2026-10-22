@@ -54,6 +54,18 @@ jobs:
           ls -la app/src/main/assets | grep -E "imagefs|proton|container_pattern"
           test -f app/src/main/assets/imagefs.txz
 
+      # The Mali-G72 wrapper advertises VK_EXT_transform_feedback but vkCreateDevice rejects it (-8), which stock DXVK 1.10.3
+      # needs for D3D11 feature level 10_0. Build a d3d11.dll without that requirement and pack it as its own DXVK version.
+      - name: Build patched DXVK d3d11.dll
+        run: |
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix glslang-tools meson ninja-build zstd
+          tools/dxvk/build_d3d11.sh /tmp/dxvk-work /tmp/dxvk-out/d3d11.dll
+          mkdir /tmp/dxvk-pack
+          tar -I zstd -xf app/src/main/assets/dxwrapper/dxvk-1.10.3.tzst -C /tmp/dxvk-pack
+          cp /tmp/dxvk-out/d3d11.dll /tmp/dxvk-pack/system32/d3d11.dll
+          tar -I zstd -cf app/src/main/assets/dxwrapper/dxvk-1.10.3-ctblox.tzst -C /tmp/dxvk-pack .
+          tar -I zstd -tvf app/src/main/assets/dxwrapper/dxvk-1.10.3-ctblox.tzst
+
       - name: Build GPU probe (Windows exe run inside Wine)
         run: |
           sudo apt-get install -y -qq gcc-mingw-w64-x86-64

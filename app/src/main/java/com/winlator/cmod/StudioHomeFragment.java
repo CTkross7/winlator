@@ -29,6 +29,7 @@ import com.winlator.cmod.core.AppPaths;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.xenvironment.ImageFs;
 
 import org.json.JSONException;
@@ -378,6 +379,14 @@ public class StudioHomeFragment extends Fragment {
         }
         else if (!blacklist.equals(envVars.get(StudioPreset.EXTENSION_BLACKLIST_ENV))) {
             envVars.put(StudioPreset.EXTENSION_BLACKLIST_ENV, blacklist);
+            changed = true;
+        }
+
+        // Containers created by earlier builds still point at stock DXVK; switching the version makes the next launch re-extract.
+        KeyValueSet dxvkConfig = new KeyValueSet(container.getDXWrapperConfig());
+        if (!StudioPreset.DXVK_VERSION.equals(dxvkConfig.get("version"))) {
+            dxvkConfig.put("version", StudioPreset.DXVK_VERSION);
+            container.setDXWrapperConfig(dxvkConfig.toString());
             changed = true;
         }
 
