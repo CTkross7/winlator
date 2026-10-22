@@ -153,7 +153,71 @@ static const char *FEATURE_NAMES[55] = {
     "variableMultisampleRate", "inheritedQueries",
 };
 
-static void vulkan_query(void) {
+
+typedef struct { int sType; const void *pNext; unsigned flags; unsigned family; unsigned count; const float *priorities; } QueueInfo;
+typedef struct { int sType; const void *pNext; unsigned flags; unsigned queueCount; const QueueInfo *queues; unsigned layerCount;
+                 const char *const *layers; unsigned extCount; const char *const *exts; const unsigned *features; } DeviceInfo;
+typedef struct { int sType; void *pNext; unsigned a, b; } FeatureStruct;
+
+static const char *DXVK_EXTS[11] = {
+    "VK_EXT_host_query_reset", "VK_EXT_transform_feedback", "VK_KHR_create_renderpass2", "VK_KHR_depth_stencil_resolve",
+    "VK_KHR_driver_properties", "VK_KHR_external_memory_win32", "VK_KHR_external_semaphore_win32", "VK_KHR_image_format_list",
+    "VK_KHR_sampler_mirror_clamp_to_edge", "VK_KHR_swapchain", "VK_KHR_timeline_semaphore",
+};
+
+/* Tries vkCreateDevice with the given subset (bit mask over DXVK_EXTS) and the features DXVK enables for FL 10_0. */
+static void try_create_device(PFN_GPA gipa, void *instance, void *physical, unsigned mask, const char *label) {
+    int (WINAPI *createDevice)(void *, const DeviceInfo *, const void *, void **) = gipa(instance, "vkCreateDevice");
+    void (WINAPI *destroyDevice)(void *, const void *) = gipa(instance, "vkDestroyDevice");
+
+    static const int ON[] = { 0, 1, 3, 4, 6, 11, 12, 13, 18, 19, 22, 23, 28, 32, 37, 38 };
+    unsigned features[55] = {0};
+    for (unsigned i = 0; i < sizeof ON / sizeof *ON; i++) features[ON[i]] = 1;
+
+    const char *exts[11];
+    unsigned count = 0;
+    int hasTf = 0, hasHqr = 0, hasTl = 0;
+    for (int i = 0; i < 11; i++) {
+        if (!(mask & (1u << i))) continue;
+        exts[count++] = DXVK_EXTS[i];
+        if (i == 1) hasTf = 1;
+        if (i == 0) hasHqr = 1;
+        if (i == 10) hasTl = 1;
+    }
+
+    FeatureStruct tf = { 1000028000, NULL, 1, 1 }, hqr = { 1000261000, NULL, 1, 0 }, tl = { 1000207000, NULL, 1, 0 };
+    void *chain = NULL;
+    if (hasTf) { tf.pNext = chain; chain = &tf; }
+    if (hasHqr) { hqr.pNext = chain; chain = &hqr; }
+    if (hasTl) { tl.pNext = chain; chain = &tl; }
+
+    float priority = 1.0f;
+    QueueInfo queue = { 2 /* DEVICE_QUEUE_CREATE_INFO */, NULL, 0, 0, 1, &priority };
+    DeviceInfo info = { 3 /* DEVICE_CREATE_INFO */, chain, 0, 1, &queue, 0, NULL, count, exts, features };
+
+    void *device = NULL;
+    int r = createDevice(physical, &info, NULL, &device);
+    log_line("    vkCreateDevice %-34s -> %d%s", label, r, r == 0 ? " (ok)" : "");
+    if (r == 0 && destroyDevice) destroyDevice(device, NULL);
+}
+
+static void device_tests(PFN_GPA gipa, void *instance, void *physical) {
+    log_line("  vkCreateDevice tests (queue family 0, DXVK's FL10_0 core features):");
+    try_create_device(gipa, instance, physical, 0, "no extensions");
+    try_create_device(gipa, instance, physical, 0x7FF, "all 11 extensions (what DXVK asks)");
+    for (int i = 0; i < 11; i++) {
+        char label[96];
+        snprintf(label, sizeof label, "only %s", DXVK_EXTS[i] + 3);
+        try_create_device(gipa, instance, physical, 1u << i, label);
+    }
+    for (int i = 0; i < 11; i++) {
+        char label[96];
+        snprintf(label, sizeof label, "all except %s", DXVK_EXTS[i] + 3);
+        try_create_device(gipa, instance, physical, 0x7FF & ~(1u << i), label);
+    }
+}
+
+static void vulkan_query(int withDeviceTests) {
     HMODULE vk = LoadLibraryA("vulkan-1.dll");
     if (!vk) { log_line("  vulkan: vulkan-1.dll not found"); return; }
     PFN_GPA gipa = (PFN_GPA)GetProcAddress(vk, "vkGetInstanceProcAddr");
@@ -192,6 +256,8 @@ static void vulkan_query(void) {
     list[0] = 0;
     for (int i = 0; i < 55; i++) if (!features[i]) { strcat(list, FEATURE_NAMES[i]); strcat(list, " "); }
     log_line("  vulkan core features that are OFF: %s", list[0] ? list : "(none)");
+
+    if (withDeviceTests) device_tests(gipa, instance, device);
 }
 
 /* ---- Child ---------------------------------------------------------------------------------------------------- */
@@ -199,7 +265,7 @@ static void vulkan_query(void) {
 static int run_child(void) {
     dump_env();
     dump_unix_env("child");
-    vulkan_query();
+    vulkan_query(0);
 
     HMODULE d3d11 = LoadLibraryA("d3d11.dll");
     if (!d3d11) return 0x7F000001;
@@ -335,6 +401,7 @@ int main(int argc, char **argv) {
     log_line("START");
     dump_unix_env("parent");
     copy_unix_env_to_win32();
+    vulkan_query(1);
     for (int phase = 0; phase < 2; phase++) {
         if (phase == 1 && !studioExe[0]) break;
         for (int i = 0; i < count; i++) {
