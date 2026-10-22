@@ -192,10 +192,10 @@ index 0e2808d..6b4be50 100644
      DxvkExt khrBufferDeviceAddress            = { VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,              DxvkExtMode::Disabled };
      DxvkExt khrCreateRenderPass2              = { VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,                DxvkExtMode::Optional };
 diff --git a/src/vulkan/vulkan_presenter.cpp b/src/vulkan/vulkan_presenter.cpp
-index b02869e..ee66ffd 100644
+index b02869e..96d1e62 100644
 --- a/src/vulkan/vulkan_presenter.cpp
 +++ b/src/vulkan/vulkan_presenter.cpp
-@@ -2,6 +2,178 @@
+@@ -2,6 +2,180 @@
  
  #include "../dxvk/dxvk_format.h"
  
@@ -241,7 +241,9 @@ index b02869e..ee66ffd 100644
 +        return;
 +
 +      HWND root = ::GetAncestor(m_target, GA_ROOT);
-+      bool visible = ::IsWindow(m_target) && ::IsWindowVisible(m_target) && !::IsIconic(root);
++      // Diagnostic: CTBLOX_OVERLAY_HIDE keeps the overlay hidden so the real window underneath can be seen.
++      static const bool hideOverlay = ::GetEnvironmentVariableA("CTBLOX_OVERLAY_HIDE", nullptr, 0) != 0;
++      bool visible = !hideOverlay && ::IsWindow(m_target) && ::IsWindowVisible(m_target) && !::IsIconic(root);
 +
 +      RECT rect = { };
 +      POINT origin = { 0, 0 };
@@ -374,7 +376,7 @@ index b02869e..ee66ffd 100644
  namespace dxvk::vk {
  
    Presenter::Presenter(
-@@ -11,6 +183,8 @@ namespace dxvk::vk {
+@@ -11,6 +185,8 @@ namespace dxvk::vk {
            PresenterDevice device,
      const PresenterDesc&  desc)
    : m_vki(vki), m_vkd(vkd), m_device(device), m_window(window) {
@@ -383,7 +385,7 @@ index b02869e..ee66ffd 100644
      // As of Wine 5.9, winevulkan provides this extension, but does
      // not filter the pNext chain for VkSwapchainCreateInfoKHR properly
      // before passing it to the Linux sude, which breaks RenderDoc.
-@@ -30,6 +204,7 @@ namespace dxvk::vk {
+@@ -30,6 +206,7 @@ namespace dxvk::vk {
    Presenter::~Presenter() {
      destroySwapchain();
      destroySurface();
@@ -391,7 +393,7 @@ index b02869e..ee66ffd 100644
    }
  
  
-@@ -62,6 +237,9 @@ namespace dxvk::vk {
+@@ -62,6 +239,9 @@ namespace dxvk::vk {
  
  
    VkResult Presenter::presentImage() {
@@ -401,7 +403,7 @@ index b02869e..ee66ffd 100644
      PresenterSync sync = m_semaphores.at(m_frameIndex);
  
      VkPresentInfoKHR info;
-@@ -457,7 +635,33 @@ namespace dxvk::vk {
+@@ -457,7 +637,33 @@ namespace dxvk::vk {
      
      VkResult status = m_vki->vkCreateWin32SurfaceKHR(
        m_vki->instance(), &info, nullptr, &m_surface);
