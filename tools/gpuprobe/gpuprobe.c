@@ -267,7 +267,7 @@ static void vulkan_query(int withDeviceTests) {
 
 static LRESULT CALLBACK probe_wndproc(HWND h, UINT m, WPARAM w, LPARAM l) { return DefWindowProcA(h, m, w, l); }
 
-static HWND make_window(DWORD style, DWORD exStyle, HWND parent, const char *title) {
+static HWND make_window(DWORD style, DWORD exStyle, HWND parent, const char *title, int show) {
     static int registered;
     if (!registered) {
         WNDCLASSA wc = {0};
@@ -278,7 +278,7 @@ static HWND make_window(DWORD style, DWORD exStyle, HWND parent, const char *tit
         registered = 1;
     }
     HWND h = CreateWindowExA(exStyle, "GpuProbeWnd", title, style, 0, 0, 640, 480, parent, NULL, GetModuleHandleA(NULL), NULL);
-    if (h) { ShowWindow(h, SW_SHOW); UpdateWindow(h); }
+    if (h && show) { ShowWindow(h, SW_SHOW); UpdateWindow(h); }
 
     MSG msg;
     DWORD end = GetTickCount() + 600;
@@ -326,6 +326,21 @@ static void swapchain_test(HWND hwnd, const char *label) {
     log_line("    D3D11CreateDeviceAndSwapChain %-18s -> 0x%08lx%s", label, (unsigned long)hr, SUCCEEDED(hr) ? " (ok)" : "");
 }
 
+static void window_case(PFN_GPA gipa, void *instance, const char *label, DWORD style, DWORD exStyle, HWND parent, int show) {
+    HWND hwnd = make_window(style, exStyle, parent, label, show);
+    if (!hwnd) { log_line("    [%s] window creation failed (err=%lu)", label, GetLastError()); return; }
+
+    RECT rect = {0};
+    GetWindowRect(hwnd, &rect);
+    log_line("    [%s] style=0x%08lx ex=0x%08lx visible=%d rect=%ld,%ld,%ld,%ld", label, (unsigned long)GetWindowLongA(hwnd, GWL_STYLE),
+             (unsigned long)GetWindowLongA(hwnd, GWL_EXSTYLE), IsWindowVisible(hwnd), rect.left, rect.top, rect.right, rect.bottom);
+    log_line("      desktop=%p ancestor(parent)=%p ancestor(root)=%p GetParent=%p owner=%p", (void *)GetDesktopWindow(),
+             (void *)GetAncestor(hwnd, GA_PARENT), (void *)GetAncestor(hwnd, GA_ROOT), (void *)GetParent(hwnd), (void *)GetWindow(hwnd, GW_OWNER));
+    if (instance) vulkan_surface_test(gipa, instance, hwnd, label);
+    swapchain_test(hwnd, label);
+    DestroyWindow(hwnd);
+}
+
 static void surface_tests(void) {
     log_line("  window surface tests:");
     HMODULE vk = LoadLibraryA("vulkan-1.dll");
@@ -341,16 +356,18 @@ static void surface_tests(void) {
         if (r != 0) { log_line("    vkCreateInstance with surface extensions = %d", r); instance = NULL; }
     }
 
-    HWND overlapped = make_window(WS_OVERLAPPEDWINDOW, 0, NULL, "probe overlapped");
-    HWND popup = make_window(WS_POPUP, 0, NULL, "probe popup");
-    HWND child = overlapped ? make_window(WS_CHILD, 0, overlapped, "probe child") : NULL;
+    window_case(gipa, instance, "overlapped visible", WS_OVERLAPPEDWINDOW, 0, NULL, 1);
+    window_case(gipa, instance, "overlapped hidden", WS_OVERLAPPEDWINDOW, 0, NULL, 0);
+    window_case(gipa, instance, "overlapped parent=desktop", WS_OVERLAPPEDWINDOW, 0, GetDesktopWindow(), 1);
+    window_case(gipa, instance, "plain WS_OVERLAPPED", WS_OVERLAPPED, 0, NULL, 1);
+    window_case(gipa, instance, "caption popup", WS_POPUP | WS_CAPTION, 0, NULL, 1);
+    window_case(gipa, instance, "popup", WS_POPUP, 0, NULL, 1);
+    window_case(gipa, instance, "popup tool window", WS_POPUP, WS_EX_TOOLWINDOW, NULL, 1);
 
-    HWND windows[3] = { overlapped, popup, child };
-    const char *labels[3] = { "top-level window", "popup window", "child window" };
-    for (int i = 0; i < 3; i++) {
-        if (!windows[i]) { log_line("    %s: window creation failed (err=%lu)", labels[i], GetLastError()); continue; }
-        if (instance) vulkan_surface_test(gipa, instance, windows[i], labels[i]);
-        swapchain_test(windows[i], labels[i]);
+    HWND host = make_window(WS_POPUP, 0, NULL, "child host", 1);
+    if (host) {
+        window_case(gipa, instance, "child of popup", WS_CHILD, 0, host, 1);
+        DestroyWindow(host);
     }
 }
 
