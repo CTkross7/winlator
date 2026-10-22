@@ -12,7 +12,7 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..d34b44c 100644
+index 56c51a7..ad4491c 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
 @@ -2,6 +2,9 @@
@@ -39,7 +39,7 @@ index 56c51a7..d34b44c 100644
  
  
 +  void D3D11SwapChain::DumpBackBuffer(D3D11ImmediateContext* pContext) {
-+    static const uint32_t ticks[] = { 120, 600, 1800, 3600 };
++    static const uint32_t ticks[] = { 120, 1200, 3600, 7200 };
 +
 +    m_dumpTick += 1;
 +
@@ -50,7 +50,7 @@ index 56c51a7..d34b44c 100644
 +    const VkExtent3D extent = m_swapImage->info().extent;
 +    const VkFormat format = m_swapImage->info().format;
 +
-+    if (extent.width < 400 || extent.height < 300)
++    if (extent.width < 64 || extent.height < 64)
 +      return;
 +
 +    if (format != VK_FORMAT_B8G8R8A8_UNORM && format != VK_FORMAT_B8G8R8A8_SRGB
@@ -74,7 +74,7 @@ index 56c51a7..d34b44c 100644
 +    if (dir.back() != '/' && dir.back() != '\\')
 +      dir += '/';
 +
-+    std::string path = str::format(dir, "ctblox_frame_", extent.width, "x", extent.height, "_", index, ".bmp");
++    std::string path = str::format(dir, "ctblox_frame_", extent.width, "x", extent.height, "_w", uint32_t(uintptr_t(m_window)), "_", index, ".bmp");
 +    const bool swapRB = format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB;
 +
 +    Rc<DxvkDevice> device = m_device;
