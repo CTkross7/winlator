@@ -12,10 +12,12 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..ad4491c 100644
+index 56c51a7..94b579e 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
-@@ -2,6 +2,9 @@
+@@ -1,9 +1,16 @@
++#include <atomic>
+ #include "d3d11_context_imm.h"
  #include "d3d11_device.h"
  #include "d3d11_swapchain.h"
  
@@ -24,8 +26,13 @@ index 56c51a7..ad4491c 100644
 +
  namespace dxvk {
  
++  extern std::atomic<uint64_t> g_ctbloxSkippedDraws[3];
++
++
    static uint16_t MapGammaControlPoint(float x) {
-@@ -261,6 +264,8 @@ namespace dxvk {
+     if (x < 0.0f) x = 0.0f;
+     if (x > 1.0f) x = 1.0f;
+@@ -261,6 +268,8 @@ namespace dxvk {
      auto immediateContext = static_cast<D3D11ImmediateContext*>(deviceContext.ptr());
      immediateContext->Flush();
  
@@ -34,7 +41,7 @@ index 56c51a7..ad4491c 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +316,127 @@ namespace dxvk {
+@@ -311,6 +320,129 @@ namespace dxvk {
    }
  
  
@@ -147,6 +154,8 @@ index 56c51a7..ad4491c 100644
 +        " pixels with alpha<255: ", transparent));
 +
 +      DxvkStatCounters stats = device->getStatCounters();
++      Logger::warn(str::format("ctblox: skipped draws noPipeline=", uint64_t(g_ctbloxSkippedDraws[0]),
++        " noPipelineHandle=", uint64_t(g_ctbloxSkippedDraws[1]), " noIndexBuffer=", uint64_t(g_ctbloxSkippedDraws[2])));
 +      Logger::warn(str::format("ctblox: device stats draws=", stats.getCtr(DxvkStatCounter::CmdDrawCalls),
 +        " dispatches=", stats.getCtr(DxvkStatCounter::CmdDispatchCalls),
 +        " renderpasses=", stats.getCtr(DxvkStatCounter::CmdRenderPassCount),
@@ -178,6 +187,62 @@ index f4debea..635d8a6 100644
      void SubmitPresent(
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
+diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
+index 6d30088..90f6f72 100644
+--- a/src/dxvk/dxvk_context.cpp
++++ b/src/dxvk/dxvk_context.cpp
+@@ -1,3 +1,4 @@
++#include <atomic>
+ #include <cstring>
+ #include <vector>
+ #include <utility>
+@@ -6,6 +7,10 @@
+ #include "dxvk_context.h"
+ 
+ namespace dxvk {
++
++  // ctblox diagnostics: draws that never reach vkCmdDraw, by reason (no pipeline / no pipeline handle / index buffer).
++  std::atomic<uint64_t> g_ctbloxSkippedDraws[3];
++
+   
+   DxvkContext::DxvkContext(const Rc<DxvkDevice>& device)
+   : m_device      (device),
+@@ -4803,8 +4808,10 @@ namespace dxvk {
+   template<bool Indexed, bool Indirect>
+   bool DxvkContext::commitGraphicsState() {
+     if (m_flags.test(DxvkContextFlag::GpDirtyPipeline)) {
+-      if (unlikely(!this->updateGraphicsPipeline()))
++      if (unlikely(!this->updateGraphicsPipeline())) {
++        g_ctbloxSkippedDraws[0]++;
+         return false;
++      }
+     }
+     
+     if (m_state.gp.flags.any(DxvkGraphicsPipelineFlag::HasStorageDescriptors,
+@@ -4820,8 +4827,10 @@ namespace dxvk {
+       this->startRenderPass();
+     
+     if (m_flags.test(DxvkContextFlag::GpDirtyIndexBuffer) && Indexed) {
+-      if (unlikely(!this->updateIndexBufferBinding()))
++      if (unlikely(!this->updateIndexBufferBinding())) {
++        g_ctbloxSkippedDraws[2]++;
+         return false;
++      }
+     }
+     
+     if (m_flags.test(DxvkContextFlag::GpDirtyVertexBuffers))
+@@ -4833,8 +4842,10 @@ namespace dxvk {
+       this->updateGraphicsShaderResources();
+     
+     if (m_flags.test(DxvkContextFlag::GpDirtyPipelineState)) {
+-      if (unlikely(!this->updateGraphicsPipelineState()))
++      if (unlikely(!this->updateGraphicsPipelineState())) {
++        g_ctbloxSkippedDraws[1]++;
+         return false;
++      }
+     }
+     
+     if (m_state.gp.flags.test(DxvkGraphicsPipelineFlag::HasTransformFeedback))
 diff --git a/src/dxvk/dxvk_extensions.h b/src/dxvk/dxvk_extensions.h
 index 0e2808d..6b4be50 100644
 --- a/src/dxvk/dxvk_extensions.h
