@@ -321,8 +321,11 @@ public class StudioHomeFragment extends Fragment {
     }
 
     private void showProbeResult() {
-        String text = FileUtils.readString(new File(downloads(), StudioPreset.PROBE_RESULT_FILE));
-        if (text == null || text.isEmpty()) return;
+        File resultFile = new File(downloads(), StudioPreset.PROBE_RESULT_FILE);
+        if (!resultFile.isFile()) return;
+
+        String text = FileUtils.readString(resultFile);
+        if (text.isEmpty()) return;
         tvProbeResult.setText("gpuprobe_result.txt\n" + text);
         tvProbeResult.setVisibility(View.VISIBLE);
     }
