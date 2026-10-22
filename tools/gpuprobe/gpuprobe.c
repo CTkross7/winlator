@@ -326,10 +326,7 @@ static void swapchain_test(HWND hwnd, const char *label) {
     log_line("    D3D11CreateDeviceAndSwapChain %-18s -> 0x%08lx%s", label, (unsigned long)hr, SUCCEEDED(hr) ? " (ok)" : "");
 }
 
-static void window_case(PFN_GPA gipa, void *instance, const char *label, DWORD style, DWORD exStyle, HWND parent, int show) {
-    HWND hwnd = make_window(style, exStyle, parent, label, show);
-    if (!hwnd) { log_line("    [%s] window creation failed (err=%lu)", label, GetLastError()); return; }
-
+static void test_hwnd(PFN_GPA gipa, void *instance, HWND hwnd, const char *label, int withSwapchain) {
     RECT rect = {0};
     GetWindowRect(hwnd, &rect);
     log_line("    [%s] style=0x%08lx ex=0x%08lx visible=%d rect=%ld,%ld,%ld,%ld", label, (unsigned long)GetWindowLongA(hwnd, GWL_STYLE),
@@ -337,12 +334,37 @@ static void window_case(PFN_GPA gipa, void *instance, const char *label, DWORD s
     log_line("      desktop=%p ancestor(parent)=%p ancestor(root)=%p GetParent=%p owner=%p", (void *)GetDesktopWindow(),
              (void *)GetAncestor(hwnd, GA_PARENT), (void *)GetAncestor(hwnd, GA_ROOT), (void *)GetParent(hwnd), (void *)GetWindow(hwnd, GW_OWNER));
     if (instance) vulkan_surface_test(gipa, instance, hwnd, label);
-    swapchain_test(hwnd, label);
-    DestroyWindow(hwnd);
+    if (withSwapchain) swapchain_test(hwnd, label);
+    else log_line("    D3D11CreateDeviceAndSwapChain %s skipped", label);
+}
+
+static void window_case(PFN_GPA gipa, void *instance, const char *label, DWORD style, DWORD exStyle, int show, int withChild) {
+    HWND host = make_window(style, exStyle, NULL, label, show);
+    if (!host) { log_line("    [%s] window creation failed (err=%lu)", label, GetLastError()); return; }
+
+    HWND child = NULL;
+    if (withChild) {
+        child = make_window(WS_CHILD, 0, host, "child", 1);
+        if (!child) log_line("    [%s] child window creation failed (err=%lu)", label, GetLastError());
+    }
+
+    test_hwnd(gipa, instance, host, label, 1);
+    if (child) {
+        char childLabel[96];
+        snprintf(childLabel, sizeof childLabel, "child of %s", label);
+        test_hwnd(gipa, instance, child, childLabel, 1);
+        DestroyWindow(child);
+    }
+    DestroyWindow(host);
 }
 
 static void surface_tests(void) {
     log_line("  window surface tests:");
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    const char *(__cdecl *wineVersion)(void) = ntdll ? (const char *(__cdecl *)(void))GetProcAddress(ntdll, "wine_get_version") : NULL;
+    const char *(__cdecl *wineBuild)(void) = ntdll ? (const char *(__cdecl *)(void))GetProcAddress(ntdll, "wine_get_build_id") : NULL;
+    log_line("    wine version: %s build: %s", wineVersion ? wineVersion() : "(unknown)", wineBuild ? wineBuild() : "(unknown)");
+
     HMODULE vk = LoadLibraryA("vulkan-1.dll");
     PFN_GPA gipa = vk ? (PFN_GPA)GetProcAddress(vk, "vkGetInstanceProcAddr") : NULL;
     void *instance = NULL;
@@ -356,19 +378,12 @@ static void surface_tests(void) {
         if (r != 0) { log_line("    vkCreateInstance with surface extensions = %d", r); instance = NULL; }
     }
 
-    window_case(gipa, instance, "overlapped visible", WS_OVERLAPPEDWINDOW, 0, NULL, 1);
-    window_case(gipa, instance, "overlapped hidden", WS_OVERLAPPEDWINDOW, 0, NULL, 0);
-    window_case(gipa, instance, "overlapped parent=desktop", WS_OVERLAPPEDWINDOW, 0, GetDesktopWindow(), 1);
-    window_case(gipa, instance, "plain WS_OVERLAPPED", WS_OVERLAPPED, 0, NULL, 1);
-    window_case(gipa, instance, "caption popup", WS_POPUP | WS_CAPTION, 0, NULL, 1);
-    window_case(gipa, instance, "popup", WS_POPUP, 0, NULL, 1);
-    window_case(gipa, instance, "popup tool window", WS_POPUP, WS_EX_TOOLWINDOW, NULL, 1);
-
-    HWND host = make_window(WS_POPUP, 0, NULL, "child host", 1);
-    if (host) {
-        window_case(gipa, instance, "child of popup", WS_CHILD, 0, host, 1);
-        DestroyWindow(host);
-    }
+    window_case(gipa, instance, "overlapped alone", WS_OVERLAPPEDWINDOW, 0, 1, 0);
+    window_case(gipa, instance, "overlapped with child", WS_OVERLAPPEDWINDOW, 0, 1, 1);
+    window_case(gipa, instance, "popup with child", WS_POPUP, 0, 1, 1);
+    window_case(gipa, instance, "popup alone", WS_POPUP, 0, 1, 0);
+    /* Hung in D3D11CreateDeviceAndSwapChain last time, so keep it last. */
+    window_case(gipa, instance, "caption popup", WS_POPUP | WS_CAPTION, 0, 1, 0);
 }
 
 /* ---- Child ---------------------------------------------------------------------------------------------------- */
