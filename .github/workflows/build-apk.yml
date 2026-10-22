@@ -54,6 +54,12 @@ jobs:
           ls -la app/src/main/assets | grep -E "imagefs|proton|container_pattern"
           test -f app/src/main/assets/imagefs.txz
 
+      - name: Build GPU probe (Windows exe run inside Wine)
+        run: |
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64
+          x86_64-w64-mingw32-gcc -O2 -mconsole -include stdarg.h -o app/src/main/assets/gpuprobe.exe tools/gpuprobe/gpuprobe.c
+          ls -la app/src/main/assets/gpuprobe.exe
+
       - name: Build debug APK
         run: |
           chmod +x ./gradlew

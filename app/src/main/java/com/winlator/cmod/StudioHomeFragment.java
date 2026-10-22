@@ -53,6 +53,8 @@ public class StudioHomeFragment extends Fragment {
     private ProgressBar pbBusy;
     private Button btExport;
     private Button btExperiment;
+    private Button btProbe;
+    private TextView tvProbeResult;
     private boolean busy;
 
     @Nullable
@@ -65,6 +67,8 @@ public class StudioHomeFragment extends Fragment {
         pbBusy = view.findViewById(R.id.PBStudioBusy);
         btExport = view.findViewById(R.id.BTStudioExport);
         btExperiment = view.findViewById(R.id.BTStudioExperiment);
+        btProbe = view.findViewById(R.id.BTStudioProbe);
+        tvProbeResult = view.findViewById(R.id.TVStudioProbeResult);
         return view;
     }
 
@@ -92,6 +96,8 @@ public class StudioHomeFragment extends Fragment {
 
         btExport.setVisibility(View.GONE);
         btExperiment.setVisibility(View.GONE);
+        btProbe.setVisibility(View.GONE);
+        tvProbeResult.setVisibility(View.GONE);
 
         if (!ImageFs.find(requireContext()).isValid()) {
             show(R.string.studio_status_system, 0, 0, null, true);
@@ -108,6 +114,9 @@ public class StudioHomeFragment extends Fragment {
 
         btExport.setVisibility(View.VISIBLE);
         btExport.setOnClickListener((v) -> exportStudioLogs(studio));
+        btProbe.setVisibility(View.VISIBLE);
+        btProbe.setOnClickListener((v) -> startProbe(studio));
+        showProbeResult();
         btExperiment.setVisibility(View.VISIBLE);
         updateExperimentButton();
         btExperiment.setOnClickListener((v) -> {
@@ -271,6 +280,51 @@ public class StudioHomeFragment extends Fragment {
     private String toWindowsPath(Container container, File exe) {
         String driveC = new File(container.getRootDir(), ".wine/drive_c").getPath();
         return "C:" + exe.getPath().substring(driveC.length()).replace('/', '\\');
+    }
+
+    private static File downloads() {
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+    }
+
+    /** Copies gpuprobe.exe into the prefix, lists the experiments in Download, and runs the probe through the normal launch path. */
+    private void startProbe(Container container) {
+        try {
+            File driveC = new File(container.getRootDir(), ".wine/drive_c");
+            File exeDir = new File(driveC, "ctblox");
+            exeDir.mkdirs();
+            File exe = new File(exeDir, StudioPreset.PROBE_EXE);
+            try (java.io.InputStream in = requireContext().getAssets().open(StudioPreset.PROBE_EXE);
+                 java.io.OutputStream out = new java.io.FileOutputStream(exe)) {
+                byte[] buffer = new byte[65536];
+                int n;
+                while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+            }
+
+            File[] old = downloads().listFiles();
+            if (old != null) for (File f : old) {
+                if (f.isDirectory() && f.getName().startsWith("probe_")) FileUtils.delete(f);
+            }
+            new File(downloads(), StudioPreset.PROBE_RESULT_FILE).delete();
+
+            StringBuilder list = new StringBuilder();
+            String[][] all = StudioPreset.GPU_EXPERIMENTS;
+            for (int i = 0; i < all.length; i++) list.append(i + 1).append('\t').append(all[i][0]).append('\t').append(all[i][1]).append('\n');
+            list.append("C\t").append(StudioPreset.GPU_PROBE_CONTROL[0]).append('\t').append(StudioPreset.GPU_PROBE_CONTROL[1]).append('\n');
+            if (!FileUtils.writeString(new File(downloads(), StudioPreset.PROBE_EXPERIMENTS_FILE), list.toString())) throw new IOException("experiments file");
+
+            AppUtils.showToast(requireContext(), R.string.studio_probe_running);
+            launch(container, "GPU Probe", "C:\\ctblox\\" + StudioPreset.PROBE_EXE);
+        }
+        catch (IOException e) {
+            Log.e(TAG, "Unable to start GPU probe", e);
+        }
+    }
+
+    private void showProbeResult() {
+        String text = FileUtils.readString(new File(downloads(), StudioPreset.PROBE_RESULT_FILE));
+        if (text == null || text.isEmpty()) return;
+        tvProbeResult.setText("gpuprobe_result.txt\n" + text);
+        tvProbeResult.setVisibility(View.VISIBLE);
     }
 
     private int getExperimentIndex() {

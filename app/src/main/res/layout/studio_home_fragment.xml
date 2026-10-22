@@ -64,6 +64,24 @@
             android:visibility="gone" />
 
         <Button
+            android:id="@+id/BTStudioProbe"
+            style="?android:attr/buttonBarButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/studio_action_probe"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/TVStudioProbeResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="monospace"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/BTStudioExport"
             style="?android:attr/buttonBarButtonStyle"
             android:layout_width="wrap_content"

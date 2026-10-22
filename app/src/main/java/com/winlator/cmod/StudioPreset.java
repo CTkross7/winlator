@@ -48,6 +48,13 @@ public final class StudioPreset {
         {"driver_properties + image_format_list + sampler_mirror", "VK_KHR_driver_properties,VK_KHR_image_format_list,VK_KHR_sampler_mirror_clamp_to_edge"},
     };
 
+    /** Added to the automatic test as a sanity check: this one is known to fail, so if it "succeeds" the setting never reached the child. */
+    public static final String[] GPU_PROBE_CONTROL = {"대조군: timeline 숨김(실패해야 정상)", "VK_KHR_timeline_semaphore"};
+
+    public static final String PROBE_EXE = "gpuprobe.exe";
+    public static final String PROBE_EXPERIMENTS_FILE = "gpuprobe_experiments.txt";
+    public static final String PROBE_RESULT_FILE = "gpuprobe_result.txt";
+
     public static JSONObject buildContainerData() throws JSONException {
         JSONObject data = new JSONObject();
         data.put("name", CONTAINER_NAME);
