@@ -1,0 +1,259 @@
+diff --git a/src/d3d11/d3d11_device.cpp b/src/d3d11/d3d11_device.cpp
+index 3dcad9b..460c2d9 100644
+--- a/src/d3d11/d3d11_device.cpp
++++ b/src/d3d11/d3d11_device.cpp
+@@ -1983,8 +1983,6 @@ namespace dxvk {
+       enabled.core.features.logicOp                               = supported.core.features.logicOp;
+       enabled.core.features.shaderImageGatherExtended             = VK_TRUE;
+       enabled.core.features.variableMultisampleRate               = supported.core.features.variableMultisampleRate;
+-      enabled.extTransformFeedback.transformFeedback              = VK_TRUE;
+-      enabled.extTransformFeedback.geometryStreams                = VK_TRUE;
+     }
+     
+     if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
+diff --git a/src/dxvk/dxvk_extensions.h b/src/dxvk/dxvk_extensions.h
+index 0e2808d..6b4be50 100644
+--- a/src/dxvk/dxvk_extensions.h
++++ b/src/dxvk/dxvk_extensions.h
+@@ -292,7 +292,7 @@ namespace dxvk {
+     DxvkExt extShaderDemoteToHelperInvocation = { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME, DxvkExtMode::Optional };
+     DxvkExt extShaderStencilExport            = { VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME,              DxvkExtMode::Optional };
+     DxvkExt extShaderViewportIndexLayer       = { VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME,        DxvkExtMode::Optional };
+-    DxvkExt extTransformFeedback              = { VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME,                 DxvkExtMode::Optional };
++    DxvkExt extTransformFeedback              = { VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME,                 DxvkExtMode::Disabled };
+     DxvkExt extVertexAttributeDivisor         = { VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,           DxvkExtMode::Optional };
+     DxvkExt khrBufferDeviceAddress            = { VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,              DxvkExtMode::Disabled };
+     DxvkExt khrCreateRenderPass2              = { VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,                DxvkExtMode::Optional };
+diff --git a/src/vulkan/vulkan_presenter.cpp b/src/vulkan/vulkan_presenter.cpp
+index b02869e..52c80a1 100644
+--- a/src/vulkan/vulkan_presenter.cpp
++++ b/src/vulkan/vulkan_presenter.cpp
+@@ -2,6 +2,153 @@
+ 
+ #include "../dxvk/dxvk_format.h"
+ 
++#include <condition_variable>
++#include <mutex>
++#include <thread>
++#include <chrono>
++
++
++namespace dxvk::vk {
++
++  /**
++   * Wine 9.0 cannot create a Vulkan surface for child windows (or for windows that contain child windows). When that
++   * fails, render into a separate child-less popup window instead and keep it on top of the real window's client area.
++   * The popup lives on its own thread with its own message loop and forwards mouse input to the real window.
++   */
++  class OverlayWindow {
++
++  public:
++
++    OverlayWindow(HWND target, UINT width, UINT height)
++    : m_target(target) {
++      m_thread = std::thread([this, width, height] { run(width, height); });
++
++      std::unique_lock<std::mutex> lock(m_mutex);
++      m_cond.wait_for(lock, std::chrono::seconds(5), [this] { return m_ready; });
++    }
++
++    ~OverlayWindow() {
++      if (m_hwnd)
++        ::PostMessageA(m_hwnd, WM_CLOSE, 0, 0);
++
++      if (m_thread.joinable())
++        m_thread.join();
++    }
++
++    HWND handle() const {
++      return m_hwnd;
++    }
++
++    void sync() {
++      if (!m_hwnd)
++        return;
++
++      HWND root = ::GetAncestor(m_target, GA_ROOT);
++      bool visible = ::IsWindow(m_target) && ::IsWindowVisible(m_target) && !::IsIconic(root);
++
++      RECT rect = { };
++      POINT origin = { 0, 0 };
++      ::GetClientRect(m_target, &rect);
++      ::ClientToScreen(m_target, &origin);
++
++      int width  = rect.right  - rect.left;
++      int height = rect.bottom - rect.top;
++
++      if (!visible || width <= 0 || height <= 0) {
++        if (m_shown) {
++          ::ShowWindow(m_hwnd, SW_HIDE);
++          m_shown = false;
++        }
++        return;
++      }
++
++      if (!m_shown || origin.x != m_x || origin.y != m_y || width != m_width || height != m_height) {
++        ::SetWindowPos(m_hwnd, HWND_TOPMOST, origin.x, origin.y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
++        m_shown  = true;
++        m_x      = origin.x;
++        m_y      = origin.y;
++        m_width  = width;
++        m_height = height;
++      }
++    }
++
++  private:
++
++    HWND                    m_target  = nullptr;
++    HWND                    m_hwnd    = nullptr;
++    std::thread             m_thread;
++    std::mutex              m_mutex;
++    std::condition_variable m_cond;
++    bool                    m_ready   = false;
++    bool                    m_shown   = false;
++    int                     m_x = 0, m_y = 0, m_width = 0, m_height = 0;
++
++    void run(UINT width, UINT height) {
++      HINSTANCE instance = ::GetModuleHandleA(nullptr);
++
++      WNDCLASSA wc = { };
++      wc.lpfnWndProc   = &OverlayWindow::windowProc;
++      wc.hInstance     = instance;
++      wc.lpszClassName = "DxvkSurfaceOverlay";
++      ::RegisterClassA(&wc);
++
++      HWND hwnd = ::CreateWindowExA(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, wc.lpszClassName, "", WS_POPUP,
++        0, 0, int(width ? width : 1), int(height ? height : 1), nullptr, nullptr, instance, nullptr);
++
++      if (hwnd)
++        ::SetWindowLongPtrA(hwnd, GWLP_USERDATA, LONG_PTR(m_target));
++
++      {
++        std::lock_guard<std::mutex> lock(m_mutex);
++        m_hwnd  = hwnd;
++        m_ready = true;
++      }
++      m_cond.notify_all();
++
++      if (!hwnd)
++        return;
++
++      MSG msg;
++      while (::GetMessageA(&msg, nullptr, 0, 0) > 0) {
++        ::TranslateMessage(&msg);
++        ::DispatchMessageA(&msg);
++      }
++    }
++
++    static LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
++      HWND target = HWND(::GetWindowLongPtrA(hwnd, GWLP_USERDATA));
++
++      switch (msg) {
++        case WM_MOUSEACTIVATE:
++          return MA_NOACTIVATE;
++
++        case WM_CLOSE:
++          ::DestroyWindow(hwnd);
++          return 0;
++
++        case WM_DESTROY:
++          ::PostQuitMessage(0);
++          return 0;
++
++        case WM_MOUSEMOVE:
++        case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
++        case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
++        case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
++        case WM_XBUTTONDOWN: case WM_XBUTTONUP:
++        case WM_MOUSEWHEEL:  case WM_MOUSEHWHEEL:
++          // The overlay covers the target's client area exactly, so client coordinates carry over unchanged.
++          if (target)
++            ::PostMessageA(target, msg, wParam, lParam);
++          return 0;
++      }
++
++      return ::DefWindowProcA(hwnd, msg, wParam, lParam);
++    }
++
++  };
++
++}
++
+ namespace dxvk::vk {
+ 
+   Presenter::Presenter(
+@@ -11,6 +158,8 @@ namespace dxvk::vk {
+           PresenterDevice device,
+     const PresenterDesc&  desc)
+   : m_vki(vki), m_vkd(vkd), m_device(device), m_window(window) {
++    m_desiredExtent = desc.imageExtent;
++
+     // As of Wine 5.9, winevulkan provides this extension, but does
+     // not filter the pNext chain for VkSwapchainCreateInfoKHR properly
+     // before passing it to the Linux sude, which breaks RenderDoc.
+@@ -30,6 +179,7 @@ namespace dxvk::vk {
+   Presenter::~Presenter() {
+     destroySwapchain();
+     destroySurface();
++    delete static_cast<OverlayWindow*>(m_overlay);
+   }
+ 
+ 
+@@ -62,6 +212,9 @@ namespace dxvk::vk {
+ 
+ 
+   VkResult Presenter::presentImage() {
++    if (m_overlay)
++      static_cast<OverlayWindow*>(m_overlay)->sync();
++
+     PresenterSync sync = m_semaphores.at(m_frameIndex);
+ 
+     VkPresentInfoKHR info;
+@@ -457,7 +610,33 @@ namespace dxvk::vk {
+     
+     VkResult status = m_vki->vkCreateWin32SurfaceKHR(
+       m_vki->instance(), &info, nullptr, &m_surface);
+-    
++
++    if (status != VK_SUCCESS) {
++      Logger::warn(str::format("Presenter: vkCreateWin32SurfaceKHR failed (", status, ") for hwnd ", m_window,
++        " style=0x", std::hex, ::GetWindowLongA(m_window, GWL_STYLE), std::dec,
++        " parent=", ::GetAncestor(m_window, GA_PARENT), " desktop=", ::GetDesktopWindow(),
++        " hasChild=", ::FindWindowExA(m_window, nullptr, nullptr, nullptr) != nullptr ? 1 : 0,
++        "; falling back to an overlay window"));
++
++      if (!m_overlay) {
++        RECT rect = { };
++        ::GetClientRect(m_window, &rect);
++        UINT width  = rect.right  > rect.left ? UINT(rect.right  - rect.left) : m_desiredExtent.width;
++        UINT height = rect.bottom > rect.top  ? UINT(rect.bottom - rect.top)  : m_desiredExtent.height;
++        m_overlay = new OverlayWindow(m_window, width, height);
++      }
++
++      OverlayWindow* overlay = static_cast<OverlayWindow*>(m_overlay);
++      if (!overlay->handle())
++        return status;
++
++      overlay->sync();
++      info.hinstance = ::GetModuleHandleA(nullptr);
++      info.hwnd      = overlay->handle();
++      status = m_vki->vkCreateWin32SurfaceKHR(m_vki->instance(), &info, nullptr, &m_surface);
++      Logger::warn(str::format("Presenter: overlay window ", info.hwnd, " surface result: ", status));
++    }
++
+     if (status != VK_SUCCESS)
+       return status;
+     
+diff --git a/src/vulkan/vulkan_presenter.h b/src/vulkan/vulkan_presenter.h
+index 40562f6..7f53e64 100644
+--- a/src/vulkan/vulkan_presenter.h
++++ b/src/vulkan/vulkan_presenter.h
+@@ -192,6 +192,8 @@ namespace dxvk::vk {
+     PresenterInfo     m_info;
+ 
+     HWND              m_window      = nullptr;
++    void*             m_overlay     = nullptr;
++    VkExtent2D        m_desiredExtent = { 0, 0 };
+     VkSurfaceKHR      m_surface     = VK_NULL_HANDLE;
+     VkSwapchainKHR    m_swapchain   = VK_NULL_HANDLE;
+ 

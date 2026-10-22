@@ -4,11 +4,13 @@
 # The Mali-G72 Vulkan wrapper advertises VK_EXT_transform_feedback and reports transformFeedback/geometryStreams as
 # supported, but vkCreateDevice then fails with VK_ERROR_FEATURE_NOT_PRESENT (-8). Stock DXVK 1.10.3 demands both for
 # feature level 10_0, so D3D11 device creation always fails. Here the feature is no longer requested and the extension
-# is no longer enabled; only geometry shader stream output is lost.
+# is no longer enabled; only geometry shader stream output is lost. The Wine 9.0 child window limitation is worked
+# around with an overlay window, see ctblox.patch.
 #
 # usage: build_d3d11.sh <work dir> <output d3d11.dll>
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$(realpath -m "$1")"
 OUT="$(realpath -m "$2")"
 SRC="$WORK/dxvk"
@@ -19,13 +21,11 @@ git clone -q --depth 1 --branch v1.10.3 --recurse-submodules --shallow-submodule
 
 cd "$SRC"
 
-# 1. FL10_0 must not ask for transform feedback.
-sed -i '/enabled\.extTransformFeedback\.transformFeedback  *= VK_TRUE;/d; /enabled\.extTransformFeedback\.geometryStreams  *= VK_TRUE;/d' src/d3d11/d3d11_device.cpp
-# 2. Never enable the extension, so no transform feedback feature struct reaches vkCreateDevice.
-sed -i 's/\(DxvkExt extTransformFeedback  *= { VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME, *\)DxvkExtMode::Optional/\1DxvkExtMode::Disabled/' src/dxvk/dxvk_extensions.h
-
-grep -q "extTransformFeedback.transformFeedback  *= VK_TRUE" src/d3d11/d3d11_device.cpp && { echo "patch 1 not applied"; exit 1; }
-grep -q "VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME, *DxvkExtMode::Disabled" src/dxvk/dxvk_extensions.h || { echo "patch 2 not applied"; exit 1; }
+# ctblox.patch contains both fixes (see the header comment above and the notes below):
+#  1. FL10_0 no longer asks for transform feedback and the extension is never enabled.
+#  2. When vkCreateWin32SurfaceKHR fails (Wine 9.0 rejects child windows and windows that have children), the presenter
+#     renders into a child-less popup window that is kept on top of the real window's client area.
+git apply --whitespace=nowarn "$SCRIPT_DIR/ctblox.patch"
 
 cat > crossfile.txt <<'CROSS'
 [binaries]
