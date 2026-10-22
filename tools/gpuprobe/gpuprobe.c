@@ -171,7 +171,8 @@ static int run_child(void) {
 static void set_experiment_env(const char *logDir, const char *blacklist) {
     SetEnvironmentVariableA("DXVK_LOG_LEVEL", "info");
     SetEnvironmentVariableA("DXVK_LOG_PATH", logDir);
-    SetEnvironmentVariableA("WRAPPER_EXTENSION_BLACKLIST", blacklist[0] ? blacklist : NULL);
+    /* The app itself launches Wine with the variable present but empty; "@UNSET" removes it altogether. */
+    SetEnvironmentVariableA("WRAPPER_EXTENSION_BLACKLIST", strcmp(blacklist, "@UNSET") == 0 ? NULL : blacklist);
 }
 
 static void make_log_dir(char *win, size_t winSize, char *slash, size_t slashSize, const char *name) {
@@ -226,6 +227,9 @@ static void run_studio_experiment(const char *studioExe, const char *index, cons
     set_experiment_env(dirSlash, blacklist);
 
     log_line("== STUDIO %s  %s  blacklist=%s", index, label, blacklist);
+    /* A leftover Studio process would swallow this launch (single instance) and leave no log. */
+    system("taskkill /F /T /IM RobloxStudioBeta.exe >NUL 2>&1");
+    Sleep(5000);
     snprintf(cmd, sizeof cmd, "\"%s\"", studioExe);
     STARTUPINFOA si = { sizeof si };
     PROCESS_INFORMATION pi;

@@ -309,6 +309,7 @@ public class StudioHomeFragment extends Fragment {
             StringBuilder list = new StringBuilder();
             String[][] all = StudioPreset.GPU_EXPERIMENTS;
             for (int i = 0; i < all.length; i++) list.append(i + 1).append('\t').append(all[i][0]).append('\t').append(all[i][1]).append('\n');
+            list.append("U\t").append("변수 미설정(앱 기본은 빈 값)").append("\t@UNSET\n");
             list.append("C\t").append(StudioPreset.GPU_PROBE_CONTROL[0]).append('\t').append(StudioPreset.GPU_PROBE_CONTROL[1]).append('\n');
             File studioExe = findStudioExe(container);
             if (studioExe != null) list.append("STUDIO\t").append(toWindowsPath(container, studioExe)).append('\n');
