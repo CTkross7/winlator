@@ -81,6 +81,55 @@ static void dump_env(void) {
     FreeEnvironmentStringsA(block);
 }
 
+
+/* ---- Unix-side environment (what the Vulkan wrapper really sees) ---------------------------------------------- */
+
+static char unixEnv[1 << 17];
+static size_t unixEnvLen;
+
+static void load_unix_env(void) {
+    unixEnvLen = 0;
+    FILE *f = fopen("Z:\\proc\\self\\environ", "rb");
+    if (!f) return;
+    size_t n;
+    while (unixEnvLen < sizeof unixEnv - 1 && (n = fread(unixEnv + unixEnvLen, 1, sizeof unixEnv - 1 - unixEnvLen, f)) > 0) unixEnvLen += n;
+    fclose(f);
+    unixEnv[unixEnvLen] = 0;
+}
+
+static void dump_unix_env(const char *who) {
+    load_unix_env();
+    int count = 0;
+    for (size_t i = 0; i < unixEnvLen; i += strlen(unixEnv + i) + 1) count++;
+    log_line("  unix env of %s: %d entries (%lu bytes)", who, count, (unsigned long)unixEnvLen);
+    for (size_t i = 0; i < unixEnvLen; i += strlen(unixEnv + i) + 1) {
+        const char *e = unixEnv + i;
+        if (strncmp(e, "LD_", 3) == 0 || strncmp(e, "VK_", 3) == 0 || strncmp(e, "WRAPPER_", 8) == 0 ||
+            strncmp(e, "VKD3D", 5) == 0 || strncmp(e, "BOX64_LD", 8) == 0 || strncmp(e, "BOX64_PATH", 10) == 0 ||
+            strncmp(e, "WINE", 4) == 0 || strncmp(e, "MESA_VK", 7) == 0)
+            log_line("    unix %s", e);
+    }
+}
+
+/* Copies every unix variable the Win32 view does not have into the Win32 environment so children inherit it. */
+static void copy_unix_env_to_win32(void) {
+    load_unix_env();
+    int added = 0;
+    for (size_t i = 0; i < unixEnvLen; i += strlen(unixEnv + i) + 1) {
+        char name[512];
+        const char *e = unixEnv + i, *eq = strchr(e, '=');
+        if (!eq || eq == e || (size_t)(eq - e) >= sizeof name) continue;
+        memcpy(name, e, eq - e);
+        name[eq - e] = 0;
+        if (GetEnvironmentVariableA(name, NULL, 0) == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            SetEnvironmentVariableA(name, eq + 1);
+            log_line("    copied to win32 env: %s", name);
+            added++;
+        }
+    }
+    log_line("  unix->win32 env copy: %d variables added", added);
+}
+
 /* ---- Direct Vulkan query ------------------------------------------------------------------------------------- */
 
 typedef struct { int sType; const void *pNext; unsigned flags; const void *pApp; unsigned layerCount; const char *const *layers;
@@ -149,6 +198,7 @@ static void vulkan_query(void) {
 
 static int run_child(void) {
     dump_env();
+    dump_unix_env("child");
     vulkan_query();
 
     HMODULE d3d11 = LoadLibraryA("d3d11.dll");
@@ -283,6 +333,8 @@ int main(int argc, char **argv) {
     fclose(f);
 
     log_line("START");
+    dump_unix_env("parent");
+    copy_unix_env_to_win32();
     for (int phase = 0; phase < 2; phase++) {
         if (phase == 1 && !studioExe[0]) break;
         for (int i = 0; i < count; i++) {
