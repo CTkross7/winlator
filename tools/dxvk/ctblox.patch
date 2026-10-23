@@ -855,10 +855,12 @@ index e2e421b..b89bf52 100644
      static VkBorderColor getBorderColor(
        const Rc<DxvkDevice>&         device,
 diff --git a/src/vulkan/vulkan_presenter.cpp b/src/vulkan/vulkan_presenter.cpp
-index b02869e..96d1e62 100644
+index b02869e..618551a 100644
 --- a/src/vulkan/vulkan_presenter.cpp
 +++ b/src/vulkan/vulkan_presenter.cpp
-@@ -2,6 +2,180 @@
+@@ -1,7 +1,239 @@
++#include <functional>
+ #include "vulkan_presenter.h"
  
  #include "../dxvk/dxvk_format.h"
  
@@ -957,6 +959,60 @@ index b02869e..96d1e62 100644
 +        m_width  = width;
 +        m_height = height;
 +      }
++
++      logWindows(root, origin, width, height);
++    }
++
++    // Diagnostic: describes which windows sit on top of the Studio window, to find out what is actually visible.
++    void logWindows(HWND root, POINT origin, int width, int height) {
++      if (m_logCount >= 5 || width < 600)
++        return;
++
++      DWORD now = ::GetTickCount();
++      if (m_logCount > 0 && now - m_lastLog < 6000)
++        return;
++      if (m_logCount == 0 && now - m_createdAt < 8000)
++        return;
++
++      m_logCount++;
++      m_lastLog = now;
++
++      auto describe = [] (HWND hwnd) {
++        char cls[64] = { };
++        ::GetClassNameA(hwnd, cls, sizeof(cls) - 1);
++        RECT r = { };
++        ::GetWindowRect(hwnd, &r);
++        return str::format("hwnd=0x", std::hex, uint64_t(uintptr_t(hwnd)), std::dec, " class=", cls,
++          " visible=", int(::IsWindowVisible(hwnd)), " rect=", r.left, ",", r.top, " ", r.right - r.left, "x", r.bottom - r.top,
++          " style=0x", std::hex, uint64_t(::GetWindowLongA(hwnd, GWL_STYLE)), " ex=0x", uint64_t(::GetWindowLongA(hwnd, GWL_EXSTYLE)), std::dec);
++      };
++
++      POINT center = { origin.x + width / 2, origin.y + height / 2 };
++      HWND atPoint = ::WindowFromPoint(center);
++      Logger::warn(str::format("ctblox: windows #", m_logCount, " overlay: ", describe(m_hwnd), " | target: ", describe(m_target),
++        " | root: ", describe(root), " | atCenter: ", atPoint ? describe(atPoint) : std::string("none")));
++
++      struct Ctx { std::function<std::string(HWND)>* describe; HWND overlay; HWND root; int count; } ctx = { nullptr, m_hwnd, root, 0 };
++      std::function<std::string(HWND)> describeFn = describe;
++      ctx.describe = &describeFn;
++
++      ::EnumWindows([] (HWND hwnd, LPARAM lparam) -> BOOL {
++        Ctx* c = reinterpret_cast<Ctx*>(lparam);
++        if (c->count++ >= 12)
++          return FALSE;
++        Logger::warn(str::format("ctblox:   top-level #", c->count, hwnd == c->overlay ? " [overlay] " : hwnd == c->root ? " [root] " : " ",
++          (*c->describe)(hwnd)));
++        return TRUE;
++      }, reinterpret_cast<LPARAM>(&ctx));
++
++      ctx.count = 0;
++      ::EnumChildWindows(root, [] (HWND hwnd, LPARAM lparam) -> BOOL {
++        Ctx* c = reinterpret_cast<Ctx*>(lparam);
++        if (c->count++ >= 16)
++          return FALSE;
++        Logger::warn(str::format("ctblox:   root child #", c->count, " ", (*c->describe)(hwnd)));
++        return TRUE;
++      }, reinterpret_cast<LPARAM>(&ctx));
 +    }
 +
 +  private:
@@ -969,6 +1025,9 @@ index b02869e..96d1e62 100644
 +    bool                    m_ready   = false;
 +    bool                    m_shown   = false;
 +    int                     m_x = 0, m_y = 0, m_width = 0, m_height = 0;
++    uint32_t                m_logCount = 0;
++    DWORD                   m_lastLog = 0;
++    DWORD                   m_createdAt = ::GetTickCount();
 +
 +    void run(UINT width, UINT height) {
 +      HINSTANCE instance = ::GetModuleHandleA(nullptr);
@@ -1039,7 +1098,7 @@ index b02869e..96d1e62 100644
  namespace dxvk::vk {
  
    Presenter::Presenter(
-@@ -11,6 +185,8 @@ namespace dxvk::vk {
+@@ -11,6 +243,8 @@ namespace dxvk::vk {
            PresenterDevice device,
      const PresenterDesc&  desc)
    : m_vki(vki), m_vkd(vkd), m_device(device), m_window(window) {
@@ -1048,7 +1107,7 @@ index b02869e..96d1e62 100644
      // As of Wine 5.9, winevulkan provides this extension, but does
      // not filter the pNext chain for VkSwapchainCreateInfoKHR properly
      // before passing it to the Linux sude, which breaks RenderDoc.
-@@ -30,6 +206,7 @@ namespace dxvk::vk {
+@@ -30,6 +264,7 @@ namespace dxvk::vk {
    Presenter::~Presenter() {
      destroySwapchain();
      destroySurface();
@@ -1056,7 +1115,7 @@ index b02869e..96d1e62 100644
    }
  
  
-@@ -62,6 +239,9 @@ namespace dxvk::vk {
+@@ -62,6 +297,9 @@ namespace dxvk::vk {
  
  
    VkResult Presenter::presentImage() {
@@ -1066,7 +1125,7 @@ index b02869e..96d1e62 100644
      PresenterSync sync = m_semaphores.at(m_frameIndex);
  
      VkPresentInfoKHR info;
-@@ -457,7 +637,33 @@ namespace dxvk::vk {
+@@ -457,7 +695,33 @@ namespace dxvk::vk {
      
      VkResult status = m_vki->vkCreateWin32SurfaceKHR(
        m_vki->instance(), &info, nullptr, &m_surface);
