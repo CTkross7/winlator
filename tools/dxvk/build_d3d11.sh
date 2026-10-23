@@ -17,7 +17,16 @@ SRC="$WORK/dxvk"
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
-git clone -q --depth 1 --branch v1.10.3 --recurse-submodules --shallow-submodules https://github.com/doitsujin/dxvk.git "$SRC"
+
+# The CI runner sometimes stalls on this clone, so give each attempt a time limit and retry.
+for attempt in 1 2 3; do
+  rm -rf "$SRC"
+  if timeout 240 git clone -q --depth 1 --branch v1.10.3 --recurse-submodules --shallow-submodules https://github.com/doitsujin/dxvk.git "$SRC"; then
+    break
+  fi
+  echo "git clone attempt $attempt failed or timed out" >&2
+  [ "$attempt" = 3 ] && exit 1
+done
 
 cd "$SRC"
 
