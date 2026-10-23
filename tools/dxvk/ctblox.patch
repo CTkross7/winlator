@@ -39,7 +39,7 @@ index 800bdea..bf6a576 100644
      if (dumpPath.size() != 0) {
        reader.store(std::ofstream(str::tows(str::format(dumpPath, "/", name, ".dxbc").c_str()).c_str(),
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..0d216f4 100644
+index 56c51a7..0cf3f80 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
 @@ -1,9 +1,22 @@
@@ -74,7 +74,7 @@ index 56c51a7..0d216f4 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +326,313 @@ namespace dxvk {
+@@ -311,6 +326,318 @@ namespace dxvk {
    }
  
  
@@ -259,6 +259,11 @@ index 56c51a7..0d216f4 100644
 +  void D3D11SwapChain::DumpBackBuffer(D3D11ImmediateContext* pContext) {
 +    // Only the first frame is read back: waiting for the GPU inside the present path may have caused crashes.
 +    static const uint32_t ticks[] = { 120, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
++
++    // Off unless CTBLOX_PROBE is set: the readbacks stall the GPU and cost most of the frame rate.
++    static const bool enabled = !env::getEnvVar("CTBLOX_PROBE").empty();
++    if (!enabled)
++      return;
 +
 +    m_dumpTick += 1;
 +
