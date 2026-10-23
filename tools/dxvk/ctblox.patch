@@ -12,11 +12,13 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..fd4bc31 100644
+index 56c51a7..175ae1d 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
-@@ -1,9 +1,17 @@
+@@ -1,9 +1,21 @@
 +#include <atomic>
++#include <mutex>
++#include <vector>
  #include "d3d11_context_imm.h"
  #include "d3d11_device.h"
  #include "d3d11_swapchain.h"
@@ -28,12 +30,14 @@ index 56c51a7..fd4bc31 100644
  
 +  extern std::atomic<uint64_t> g_ctbloxSkippedDraws[3];
 +  extern std::atomic<int32_t>  g_ctbloxTraceDraws;
++  extern std::mutex            g_ctbloxImageMutex;
++  extern std::vector<Rc<DxvkImage>> g_ctbloxImages;
 +
 +
    static uint16_t MapGammaControlPoint(float x) {
      if (x < 0.0f) x = 0.0f;
      if (x > 1.0f) x = 1.0f;
-@@ -261,6 +269,8 @@ namespace dxvk {
+@@ -261,6 +273,8 @@ namespace dxvk {
      auto immediateContext = static_cast<D3D11ImmediateContext*>(deviceContext.ptr());
      immediateContext->Flush();
  
@@ -42,15 +46,118 @@ index 56c51a7..fd4bc31 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +321,132 @@ namespace dxvk {
+@@ -311,6 +325,235 @@ namespace dxvk {
    }
  
  
++  void D3D11SwapChain::DumpCapturedTextures(D3D11ImmediateContext* pContext) {
++    std::vector<Rc<DxvkImage>> images;
++    {
++      std::lock_guard<std::mutex> lock(g_ctbloxImageMutex);
++      images.swap(g_ctbloxImages);
++    }
++
++    if (images.empty())
++      return;
++
++    std::string dir = env::getEnvVar("DXVK_LOG_PATH");
++    if (dir.empty())
++      dir = "D:/";
++    if (dir.back() != '/' && dir.back() != '\\')
++      dir += '/';
++
++    Rc<DxvkDevice> device = m_device;
++    auto lock = pContext->LockContext();
++
++    pContext->EmitCs([=] (DxvkContext* ctx) {
++      uint32_t number = 0;
++
++      for (const Rc<DxvkImage>& image : images) {
++        const VkExtent3D extent = image->info().extent;
++        const VkFormat format = image->info().format;
++        const bool swapRB = format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB;
++        const size_t pixels = size_t(extent.width) * extent.height;
++
++        DxvkBufferCreateInfo bufferInfo;
++        bufferInfo.size   = VkDeviceSize(pixels) * 4;
++        bufferInfo.usage  = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++        bufferInfo.stages = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
++        bufferInfo.access = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
++
++        Rc<DxvkBuffer> buffer = device->createBuffer(bufferInfo,
++          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
++
++        VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
++
++        ctx->copyImageToBuffer(buffer, 0, VkDeviceSize(extent.width) * 4, VkDeviceSize(pixels) * 4,
++          image, layers, VkOffset3D { 0, 0, 0 }, extent);
++        ctx->flushCommandList();
++        device->waitForIdle();
++
++        const uint8_t* src = reinterpret_cast<const uint8_t*>(buffer->mapPtr(0));
++        uint64_t sum[4] = { 0, 0, 0, 0 };
++        size_t nonZero = 0, nonWhite = 0;
++
++        std::vector<uint8_t> bmp;
++        const bool save = pixels <= 2200000;
++        if (save) {
++          bmp.assign(54 + pixels * 4, 0);
++          uint8_t* hdr = bmp.data();
++          uint32_t fileSize = uint32_t(bmp.size());
++          uint32_t dataOffset = 54, infoSize = 40;
++          int32_t  width = int32_t(extent.width), height = -int32_t(extent.height);
++          uint16_t planes = 1, bpp = 32;
++          hdr[0] = 'B'; hdr[1] = 'M';
++          std::memcpy(hdr + 2, &fileSize, 4);
++          std::memcpy(hdr + 10, &dataOffset, 4);
++          std::memcpy(hdr + 14, &infoSize, 4);
++          std::memcpy(hdr + 18, &width, 4);
++          std::memcpy(hdr + 22, &height, 4);
++          std::memcpy(hdr + 26, &planes, 2);
++          std::memcpy(hdr + 28, &bpp, 2);
++        }
++
++        for (size_t i = 0; i < pixels; i++) {
++          uint8_t c0 = src[i * 4 + 0], c1 = src[i * 4 + 1], c2 = src[i * 4 + 2], a = src[i * 4 + 3];
++          uint8_t r = swapRB ? c0 : c2;
++          uint8_t b = swapRB ? c2 : c0;
++          sum[0] += r; sum[1] += c1; sum[2] += b; sum[3] += a;
++          if (r | c1 | b | a)
++            nonZero++;
++          if (!(r == 255 && c1 == 255 && b == 255 && a == 255))
++            nonWhite++;
++          if (save) {
++            uint8_t* dst = bmp.data() + 54 + i * 4;
++            dst[0] = b; dst[1] = c1; dst[2] = r; dst[3] = 255;
++          }
++        }
++
++        std::string path = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, ".bmp");
++        if (save) {
++          std::ofstream file(path, std::ios::binary | std::ios::trunc);
++          file.write(reinterpret_cast<const char*>(bmp.data()), std::streamsize(bmp.size()));
++        }
++
++        Logger::warn(str::format("ctblox: texture ", extent.width, "x", extent.height, " fmt=", uint32_t(format),
++          " nonZeroPixels=", nonZero, " nonWhitePixels=", nonWhite,
++          " avgRGBA=", sum[0] / pixels, ",", sum[1] / pixels, ",", sum[2] / pixels, ",", sum[3] / pixels,
++          save ? str::format(" saved to ", path) : std::string(" (too large to save)")));
++        number++;
++      }
++    });
++
++    pContext->FlushCsChunk();
++  }
++
++
 +  void D3D11SwapChain::DumpBackBuffer(D3D11ImmediateContext* pContext) {
 +    // Only the first frame is read back: waiting for the GPU inside the present path may have caused crashes.
 +    static const uint32_t ticks[] = { 120, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
 +
 +    m_dumpTick += 1;
++
++    if (m_dumpTick == 300)
++      DumpCapturedTextures(pContext);
 +
 +    if (m_dumpIndex >= 4 || m_dumpTick != ticks[m_dumpIndex])
 +      return;
@@ -176,10 +283,10 @@ index 56c51a7..fd4bc31 100644
            D3D11ImmediateContext*  pContext,
      const vk::PresenterSync&      Sync,
 diff --git a/src/d3d11/d3d11_swapchain.h b/src/d3d11/d3d11_swapchain.h
-index f4debea..635d8a6 100644
+index f4debea..4d197bb 100644
 --- a/src/d3d11/d3d11_swapchain.h
 +++ b/src/d3d11/d3d11_swapchain.h
-@@ -116,6 +116,11 @@ namespace dxvk {
+@@ -116,6 +116,12 @@ namespace dxvk {
  
      HRESULT PresentImage(UINT SyncInterval);
  
@@ -187,16 +294,18 @@ index f4debea..635d8a6 100644
 +    uint32_t                m_dumpTick  = 0;
 +    uint32_t                m_dumpIndex = 0;
 +    void DumpBackBuffer(D3D11ImmediateContext* pContext);
++    void DumpCapturedTextures(D3D11ImmediateContext* pContext);
 +
      void SubmitPresent(
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
 diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
-index 6d30088..ad22767 100644
+index 6d30088..4847882 100644
 --- a/src/dxvk/dxvk_context.cpp
 +++ b/src/dxvk/dxvk_context.cpp
-@@ -1,11 +1,18 @@
+@@ -1,11 +1,21 @@
 +#include <atomic>
++#include <mutex>
  #include <cstring>
  #include <vector>
  #include <utility>
@@ -210,11 +319,13 @@ index 6d30088..ad22767 100644
 +  // ctblox diagnostics: draws that never reach vkCmdDraw, by reason (no pipeline / no pipeline handle / index buffer).
 +  std::atomic<uint64_t> g_ctbloxSkippedDraws[3];
 +  std::atomic<int32_t>  g_ctbloxTraceDraws;
++  std::mutex            g_ctbloxImageMutex;
++  std::vector<Rc<DxvkImage>> g_ctbloxImages;
 +
    
    DxvkContext::DxvkContext(const Rc<DxvkDevice>& device)
    : m_device      (device),
-@@ -1385,15 +1392,172 @@ namespace dxvk {
+@@ -1385,15 +1395,186 @@ namespace dxvk {
    }
    
    
@@ -292,6 +403,20 @@ index 6d30088..ad22767 100644
 +        const auto& slot = m_rc[i];
 +        if (slot.imageView != nullptr) {
 +          const auto& info = slot.imageView->imageInfo();
++          // Remember sampled textures so the next present can read them back and save them.
++          if ((info.usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) && info.extent.width > 1
++           && info.extent.width != rt.view->imageInfo().extent.width
++           && (info.format == VK_FORMAT_R8G8B8A8_UNORM || info.format == VK_FORMAT_R8G8B8A8_SRGB
++            || info.format == VK_FORMAT_B8G8R8A8_UNORM || info.format == VK_FORMAT_B8G8R8A8_SRGB)) {
++            Rc<DxvkImage> img = slot.imageView->image();
++            std::lock_guard<std::mutex> lock(g_ctbloxImageMutex);
++            bool known = false;
++            for (const auto& other : g_ctbloxImages)
++              known = known || other == img;
++            if (!known && g_ctbloxImages.size() < 6)
++              g_ctbloxImages.push_back(img);
++          }
++
 +          Logger::warn(str::format("ctblox:   slot ", i, " image ", info.extent.width, "x", info.extent.height,
 +            " fmt=", uint32_t(info.format), " viewFmt=", uint32_t(slot.imageView->info().format),
 +            " mips=", info.mipLevels, " layers=", info.numLayers, " usage=", uint32_t(info.usage),
@@ -387,7 +512,7 @@ index 6d30088..ad22767 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -1445,10 +1609,12 @@ namespace dxvk {
+@@ -1445,10 +1626,12 @@ namespace dxvk {
            uint32_t vertexOffset,
            uint32_t firstInstance) {
      if (this->commitGraphicsState<true, false>()) {
@@ -400,7 +525,7 @@ index 6d30088..ad22767 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -4803,8 +4969,10 @@ namespace dxvk {
+@@ -4803,8 +4986,10 @@ namespace dxvk {
    template<bool Indexed, bool Indirect>
    bool DxvkContext::commitGraphicsState() {
      if (m_flags.test(DxvkContextFlag::GpDirtyPipeline)) {
@@ -412,7 +537,7 @@ index 6d30088..ad22767 100644
      }
      
      if (m_state.gp.flags.any(DxvkGraphicsPipelineFlag::HasStorageDescriptors,
-@@ -4820,8 +4988,10 @@ namespace dxvk {
+@@ -4820,8 +5005,10 @@ namespace dxvk {
        this->startRenderPass();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyIndexBuffer) && Indexed) {
@@ -424,7 +549,7 @@ index 6d30088..ad22767 100644
      }
      
      if (m_flags.test(DxvkContextFlag::GpDirtyVertexBuffers))
-@@ -4833,8 +5003,10 @@ namespace dxvk {
+@@ -4833,8 +5020,10 @@ namespace dxvk {
        this->updateGraphicsShaderResources();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyPipelineState)) {
