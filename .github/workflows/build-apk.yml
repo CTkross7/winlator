@@ -57,9 +57,22 @@ jobs:
       # The Mali-G72 wrapper advertises VK_EXT_transform_feedback but vkCreateDevice rejects it (-8), which stock DXVK 1.10.3
       # needs for D3D11 feature level 10_0. Build a d3d11.dll without that requirement and pack it as its own DXVK version.
       - name: Build patched DXVK d3d11.dll
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: |
-          timeout 300 sudo apt-get install -y -qq gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix glslang-tools meson ninja-build zstd
+          # apt-get install stalls on the runner now and then (a run was killed by a 300 s limit here), so retry with
+          # fresh package lists, short network timeouts and no interactive prompts.
+          export DEBIAN_FRONTEND=noninteractive
+          for attempt in 1 2 3; do
+            if timeout 240 sudo -E apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+               && timeout 400 sudo -E apt-get install -y -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+                    gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix glslang-tools meson ninja-build zstd; then
+              break
+            fi
+            echo "apt attempt $attempt failed or timed out" >&2
+            [ "$attempt" = 3 ] && exit 1
+            sudo killall -q apt-get dpkg 2>/dev/null || true
+            sleep 5
+          done
           tools/dxvk/build_d3d11.sh /tmp/dxvk-work /tmp/dxvk-out/d3d11.dll
           mkdir /tmp/dxvk-pack
           tar -I zstd -xf app/src/main/assets/dxwrapper/dxvk-1.10.3.tzst -C /tmp/dxvk-pack
