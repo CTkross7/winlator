@@ -21,11 +21,23 @@ public class EnvVars implements Iterable<String> {
     public void putAll(String values) {
         if (values == null || values.isEmpty()) return;
         String[] parts = values.split(" ");
+        String lastName = null;
         for (String part : parts) {
             int index = part.indexOf("=");
+
+            // A value may contain spaces (e.g. WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--no-sandbox --disable-gpu"),
+            // which toString() writes unescaped. A token without "=" or starting with "-" continues the previous value.
+            if (lastName != null && (index < 0 || part.startsWith("-"))) {
+                data.put(lastName, data.get(lastName)+" "+part);
+                continue;
+            }
+
+            if (index < 0) continue;
+
             String name = part.substring(0, index);
             String value = part.substring(index+1);
             data.put(name, value);
+            lastName = name;
         }
     }
 
