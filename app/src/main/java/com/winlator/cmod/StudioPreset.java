@@ -25,22 +25,20 @@ public final class StudioPreset {
  * Bump the suffix whenever tools/dxvk changes: Winlator only re-extracts DXVK when this version string changes, and CI
  * names the archive after this constant.
  */
-    public static final String DXVK_VERSION = "1.10.3-ctblox21";
+    public static final String DXVK_VERSION = "1.10.3-ctblox22";
 
     /** Applied before each launch so DXVK writes its device/feature-level log to the Download folder (D: in Wine). */
     public static final String[][] DIAGNOSTIC_ENV_VARS = {
         {"DXVK_LOG_LEVEL", "info"},
         {"DXVK_LOG_PATH", "D:/"},
         {"CTBLOX_TRACE", "1"},
-        {"DXVK_SHADER_DUMP_PATH", "D:"},
         {"CTBLOX_PROBE", "1"},
-        {"CTBLOX_FORCEPS", "2"},
     };
 
     /** Left behind by builds that tried to enable the Vulkan api_dump layer, which this loader never picked up. */
     public static final String[] STALE_ENV_VARS = {
         "VK_INSTANCE_LAYERS", "VK_LOADER_LAYERS_ENABLE", "ENABLE_API_DUMP",
-        "VK_APIDUMP_OUTPUT_FORMAT", "VK_APIDUMP_DETAILED", "VK_APIDUMP_NO_ADDR", "VK_APIDUMP_FLUSH", "CTBLOX_OVERLAY_HIDE", "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "CTBLOX_FLIPVP",
+        "VK_APIDUMP_OUTPUT_FORMAT", "VK_APIDUMP_DETAILED", "VK_APIDUMP_NO_ADDR", "VK_APIDUMP_FLUSH", "CTBLOX_OVERLAY_HIDE", "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "CTBLOX_FLIPVP", "CTBLOX_FORCEPS", "DXVK_SHADER_DUMP_PATH",
     };
 
     public static final String EXTENSION_BLACKLIST_ENV = "WRAPPER_EXTENSION_BLACKLIST";

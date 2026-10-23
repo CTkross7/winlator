@@ -406,7 +406,7 @@ index f4debea..4d197bb 100644
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
 diff --git a/src/dxbc/dxbc_compiler.cpp b/src/dxbc/dxbc_compiler.cpp
-index 01420c0..92a313e 100644
+index 01420c0..8004fe5 100644
 --- a/src/dxbc/dxbc_compiler.cpp
 +++ b/src/dxbc/dxbc_compiler.cpp
 @@ -1,4 +1,5 @@
@@ -415,7 +415,45 @@ index 01420c0..92a313e 100644
  
  namespace dxvk {
  
-@@ -5978,6 +5979,68 @@ namespace dxvk {
+@@ -3433,9 +3434,10 @@ namespace dxvk {
+     
+     DxbcRegisterValue mergedResult;
+     mergedResult.type = result.type;
+-    mergedResult.id = m_module.opSelect(getVectorTypeId(mergedResult.type),
+-      emitBuildVector(bound, result.type.ccount).id, result.id,
+-      emitBuildZeroVector(result.type).id);
++    // ctblox: the Mali-G72 driver turns this select into "always zero", so every texture sample returned 0 and the
++    // whole UI stayed transparent. Unbound slots are backed by zero-filled dummy resources anyway, so skip the select.
++    (void) bound;
++    mergedResult.id = result.id;
+     
+     emitRegisterStore(ins.dst[0], mergedResult);
+   }
+@@ -3546,9 +3548,8 @@ namespace dxvk {
+     bound.type = { DxbcScalarType::Bool, 1 };
+     bound.id = texture.specId;
+     
+-    result.id = m_module.opSelect(getVectorTypeId(result.type),
+-      emitBuildVector(bound, result.type.ccount).id, result.id,
+-      emitBuildZeroVector(result.type).id);
++    // ctblox: see emitTextureSample, the bound select is skipped on Mali.
++    (void) bound;
+ 
+     emitRegisterStore(ins.dst[0], result);
+   }
+@@ -3701,9 +3702,8 @@ namespace dxvk {
+     bound.type = { DxbcScalarType::Bool, 1 };
+     bound.id = texture.specId;
+     
+-    result.id = m_module.opSelect(getVectorTypeId(result.type),
+-      emitBuildVector(bound, result.type.ccount).id, result.id,
+-      emitBuildZeroVector(result.type).id);
++    // ctblox: see emitTextureSample, the bound select is skipped on Mali.
++    (void) bound;
+ 
+     emitRegisterStore(ins.dst[0], result);
+   }
+@@ -5978,6 +5978,68 @@ namespace dxvk {
        uint32_t typeId = getVectorTypeId(vector.type);
        vector.id = m_module.opCompositeConstruct(typeId, vector.type.ccount, scalars.data());
  
