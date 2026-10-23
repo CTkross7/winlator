@@ -12,10 +12,10 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..a5c1957 100644
+index 56c51a7..0d216f4 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
-@@ -1,9 +1,21 @@
+@@ -1,9 +1,22 @@
 +#include <atomic>
 +#include <mutex>
 +#include <vector>
@@ -30,6 +30,7 @@ index 56c51a7..a5c1957 100644
  
 +  extern std::atomic<uint64_t> g_ctbloxSkippedDraws[3];
 +  extern std::atomic<int32_t>  g_ctbloxTraceDraws;
++  extern std::atomic<uint32_t> g_ctbloxAtlasDraws;
 +  extern std::mutex            g_ctbloxImageMutex;
 +  extern std::vector<Rc<DxvkImage>> g_ctbloxImages;
 +
@@ -37,7 +38,7 @@ index 56c51a7..a5c1957 100644
    static uint16_t MapGammaControlPoint(float x) {
      if (x < 0.0f) x = 0.0f;
      if (x > 1.0f) x = 1.0f;
-@@ -261,6 +273,8 @@ namespace dxvk {
+@@ -261,6 +274,8 @@ namespace dxvk {
      auto immediateContext = static_cast<D3D11ImmediateContext*>(deviceContext.ptr());
      immediateContext->Flush();
  
@@ -46,7 +47,7 @@ index 56c51a7..a5c1957 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +325,309 @@ namespace dxvk {
+@@ -311,6 +326,313 @@ namespace dxvk {
    }
  
  
@@ -152,8 +153,12 @@ index 56c51a7..a5c1957 100644
 +    pContext->EmitCs([=] (DxvkContext* ctx) {
 +      uint32_t number = 0;
 +
-+      for (const Rc<DxvkImage>& image : images) {
-+        const VkExtent3D extent = image->info().extent;
++      Logger::warn(str::format("ctblox: draws into the 512x1024 atlas so far: ", uint32_t(g_ctbloxAtlasDraws)));
++
++      for (const Rc<DxvkImage>& image : images)
++      for (uint32_t mip = 0; mip < std::min<uint32_t>(image->info().mipLevels, 3); mip++) {
++        const VkExtent3D fullExtent = image->info().extent;
++        const VkExtent3D extent = { std::max(1u, fullExtent.width >> mip), std::max(1u, fullExtent.height >> mip), 1u };
 +        const VkFormat format = image->info().format;
 +        const bool swapRB = format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB;
 +        const size_t pixels = size_t(extent.width) * extent.height;
@@ -167,7 +172,7 @@ index 56c51a7..a5c1957 100644
 +        Rc<DxvkBuffer> buffer = device->createBuffer(bufferInfo,
 +          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 +
-+        VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
++        VkImageSubresourceLayers layers = { VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, 1 };
 +
 +        ctx->copyImageToBuffer(buffer, 0, VkDeviceSize(extent.width) * 4, VkDeviceSize(pixels) * 4,
 +          image, layers, VkOffset3D { 0, 0, 0 }, extent);
@@ -207,12 +212,12 @@ index 56c51a7..a5c1957 100644
 +          }
 +        }
 +
-+        std::string path = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, "_rgb.png");
-+        std::string pathA = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, "_alpha.png");
++        std::string path = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, "_mip", mip, "_rgb.png");
++        std::string pathA = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, "_mip", mip, "_alpha.png");
 +        ctbloxWritePng(path, outW, outH, 3, rgb);
 +        ctbloxWritePng(pathA, outW, outH, 1, alpha);
 +
-+        Logger::warn(str::format("ctblox: texture ", extent.width, "x", extent.height, " fmt=", uint32_t(format),
++        Logger::warn(str::format("ctblox: texture ", extent.width, "x", extent.height, " mip=", mip, " fmt=", uint32_t(format),
 +          " nonZeroPixels=", nonZero, " nonWhitePixels=", nonWhite,
 +          " avgRGBA=", sum[0] / pixels, ",", sum[1] / pixels, ",", sum[2] / pixels, ",", sum[3] / pixels,
 +          " saved to ", path, " and ", pathA, " step=", step));
@@ -374,10 +379,10 @@ index f4debea..4d197bb 100644
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
 diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
-index 6d30088..4847882 100644
+index 6d30088..c24383f 100644
 --- a/src/dxvk/dxvk_context.cpp
 +++ b/src/dxvk/dxvk_context.cpp
-@@ -1,11 +1,21 @@
+@@ -1,11 +1,23 @@
 +#include <atomic>
 +#include <mutex>
  #include <cstring>
@@ -393,28 +398,49 @@ index 6d30088..4847882 100644
 +  // ctblox diagnostics: draws that never reach vkCmdDraw, by reason (no pipeline / no pipeline handle / index buffer).
 +  std::atomic<uint64_t> g_ctbloxSkippedDraws[3];
 +  std::atomic<int32_t>  g_ctbloxTraceDraws;
++  std::atomic<uint32_t> g_ctbloxAtlasDraws;
++  std::atomic<uint32_t> g_ctbloxProbes;
 +  std::mutex            g_ctbloxImageMutex;
 +  std::vector<Rc<DxvkImage>> g_ctbloxImages;
 +
    
    DxvkContext::DxvkContext(const Rc<DxvkDevice>& device)
    : m_device      (device),
-@@ -1385,15 +1395,186 @@ namespace dxvk {
+@@ -1385,15 +1397,217 @@ namespace dxvk {
    }
    
    
 +  void DxvkContext::ctbloxAfterDraw() {
-+    if (!m_ctbloxTraceActive)
-+      return;
 +    m_ctbloxTraceActive = false;
 +
-+    static const bool probeEnabled = !env::getEnvVar("CTBLOX_PROBE").empty();
-+    if (!probeEnabled)
++    const auto& rt = m_state.om.renderTargets.color[0];
++    if (rt.view == nullptr)
 +      return;
 +
-+    static const uint32_t probes[] = { 1, 2, 3, 5, 8, 13, 21, 34 };
++    const VkExtent3D ext = rt.view->imageInfo().extent;
++
++    // Draws into the 512x1024 UI atlas: log the first ones, and count them all.
++    if (ext.width == 512 && ext.height == 1024) {
++      uint32_t n = ++g_ctbloxAtlasDraws;
++      if (n <= 12) {
++        const auto& sh = m_state.gp.shaders;
++        Logger::warn(str::format("ctblox: atlas draw #", n, " fs=", (sh.fs != nullptr ? sh.fs->debugName() : std::string("-")),
++          " vp=", m_state.vp.viewports[0].width, "x", m_state.vp.viewports[0].height,
++          " sc=", m_state.vp.scissorRects[0].extent.width, "x", m_state.vp.scissorRects[0].extent.height));
++      }
++    }
++
++    if (ext.width > 1000)
++      m_ctbloxAppDraw++;
++
++    static const bool probeEnabled = !env::getEnvVar("CTBLOX_PROBE").empty();
++    if (!probeEnabled || ext.width < 1000 || rt.view->imageInfo().format != VK_FORMAT_R8G8B8A8_UNORM)
++      return;
++
++    static const uint32_t probes[] = { 1, 2, 3, 4, 5, 6, 8, 12, 20, 40 };
 +    for (uint32_t p : probes) {
-+      if (p == m_ctbloxTraceIndex) {
++      if (p == m_ctbloxAppDraw && g_ctbloxProbes.load() < 10) {
++        g_ctbloxProbes++;
 +        this->ctbloxProbeTarget(p);
 +        break;
 +      }
@@ -473,7 +499,7 @@ index 6d30088..4847882 100644
 +      }
 +
 +      uint32_t logged = 0;
-+      for (uint32_t i = 0; i < m_rc.size() && logged < 14; i++) {
++      for (uint32_t i = 0; i < m_rc.size() && logged < 20; i++) {
 +        const auto& slot = m_rc[i];
 +        if (slot.imageView != nullptr) {
 +          const auto& info = slot.imageView->imageInfo();
@@ -508,6 +534,13 @@ index 6d30088..4847882 100644
 +          logged++;
 +        } else if (slot.bufferView != nullptr) {
 +          Logger::warn(str::format("ctblox:   slot ", i, " texel buffer view"));
++          logged++;
++        } else if (slot.sampler != nullptr) {
++          const auto& si = slot.sampler->ctbloxInfo();
++          Logger::warn(str::format("ctblox:   slot ", i, " sampler mag=", uint32_t(si.magFilter), " min=", uint32_t(si.minFilter),
++            " mip=", uint32_t(si.mipmapMode), " lod=", si.mipmapLodMin, "..", si.mipmapLodMax, " bias=", si.mipmapLodBias,
++            " addr=", uint32_t(si.addressModeU), ",", uint32_t(si.addressModeV), " aniso=", uint32_t(si.useAnisotropy),
++            " compare=", uint32_t(si.compareToDepth)));
 +          logged++;
 +        }
 +      }
@@ -564,7 +597,12 @@ index 6d30088..4847882 100644
 +        nonWhite++;
 +    }
 +
-+    Logger::warn(str::format("ctblox: probe after traced draw #", index, " target=", extent.width, "x", extent.height,
++    const size_t centerIndex = (size_t(extent.height / 2) * extent.width + extent.width / 2) * 4;
++    const auto& fsShader = m_state.gp.shaders.fs;
++    Logger::warn(str::format("ctblox: probe after app draw #", index, " fs=", (fsShader != nullptr ? fsShader->debugName() : std::string("-")),
++      " sc=", m_state.vp.scissorRects[0].extent.width, "x", m_state.vp.scissorRects[0].extent.height,
++      " center=", uint32_t(src[centerIndex]), ",", uint32_t(src[centerIndex + 1]), ",", uint32_t(src[centerIndex + 2]), ",", uint32_t(src[centerIndex + 3]),
++      " target=", extent.width, "x", extent.height,
 +      " fmt=", uint32_t(format), " nonWhitePixels=", nonWhite,
 +      " avg=", sum[0] / pixels, ",", sum[1] / pixels, ",", sum[2] / pixels, ",", sum[3] / pixels,
 +      " min=", minV[0], ",", minV[1], ",", minV[2], ",", minV[3],
@@ -586,7 +624,7 @@ index 6d30088..4847882 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -1445,10 +1626,12 @@ namespace dxvk {
+@@ -1445,10 +1659,12 @@ namespace dxvk {
            uint32_t vertexOffset,
            uint32_t firstInstance) {
      if (this->commitGraphicsState<true, false>()) {
@@ -599,7 +637,7 @@ index 6d30088..4847882 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -4803,8 +4986,10 @@ namespace dxvk {
+@@ -4803,8 +5019,10 @@ namespace dxvk {
    template<bool Indexed, bool Indirect>
    bool DxvkContext::commitGraphicsState() {
      if (m_flags.test(DxvkContextFlag::GpDirtyPipeline)) {
@@ -611,7 +649,7 @@ index 6d30088..4847882 100644
      }
      
      if (m_state.gp.flags.any(DxvkGraphicsPipelineFlag::HasStorageDescriptors,
-@@ -4820,8 +5005,10 @@ namespace dxvk {
+@@ -4820,8 +5038,10 @@ namespace dxvk {
        this->startRenderPass();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyIndexBuffer) && Indexed) {
@@ -623,7 +661,7 @@ index 6d30088..4847882 100644
      }
      
      if (m_flags.test(DxvkContextFlag::GpDirtyVertexBuffers))
-@@ -4833,8 +5020,10 @@ namespace dxvk {
+@@ -4833,8 +5053,10 @@ namespace dxvk {
        this->updateGraphicsShaderResources();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyPipelineState)) {
@@ -636,10 +674,10 @@ index 6d30088..4847882 100644
      
      if (m_state.gp.flags.test(DxvkGraphicsPipelineFlag::HasTransformFeedback))
 diff --git a/src/dxvk/dxvk_context.h b/src/dxvk/dxvk_context.h
-index c5547c1..6620c0c 100644
+index c5547c1..42dcce8 100644
 --- a/src/dxvk/dxvk_context.h
 +++ b/src/dxvk/dxvk_context.h
-@@ -1292,6 +1292,14 @@ namespace dxvk {
+@@ -1292,6 +1292,15 @@ namespace dxvk {
      
      template<bool Indexed, bool Indirect>
      bool commitGraphicsState();
@@ -649,6 +687,7 @@ index c5547c1..6620c0c 100644
 +    void ctbloxAfterDraw();
 +
 +    uint32_t m_ctbloxTraceIndex   = 0;
++    uint32_t m_ctbloxAppDraw      = 0;
 +    uint32_t m_ctbloxVertexLogs   = 0;
 +    bool     m_ctbloxTraceActive  = false;
      
@@ -667,6 +706,40 @@ index 0e2808d..6b4be50 100644
      DxvkExt extVertexAttributeDivisor         = { VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,           DxvkExtMode::Optional };
      DxvkExt khrBufferDeviceAddress            = { VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,              DxvkExtMode::Disabled };
      DxvkExt khrCreateRenderPass2              = { VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,                DxvkExtMode::Optional };
+diff --git a/src/dxvk/dxvk_sampler.cpp b/src/dxvk/dxvk_sampler.cpp
+index c10e82d..deac0b6 100644
+--- a/src/dxvk/dxvk_sampler.cpp
++++ b/src/dxvk/dxvk_sampler.cpp
+@@ -6,7 +6,7 @@ namespace dxvk {
+   DxvkSampler::DxvkSampler(
+           DxvkDevice*             device,
+     const DxvkSamplerCreateInfo&  info)
+-  : m_vkd(device->vkd()) {
++  : m_vkd(device->vkd()), m_ctbloxInfo(info) {
+     VkSamplerCustomBorderColorCreateInfoEXT borderColorInfo;
+     borderColorInfo.sType               = VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT;
+     borderColorInfo.pNext               = nullptr;
+diff --git a/src/dxvk/dxvk_sampler.h b/src/dxvk/dxvk_sampler.h
+index e2e421b..b89bf52 100644
+--- a/src/dxvk/dxvk_sampler.h
++++ b/src/dxvk/dxvk_sampler.h
+@@ -67,11 +67,16 @@ namespace dxvk {
+     VkSampler handle() const {
+       return m_sampler;
+     }
++
++    const DxvkSamplerCreateInfo& ctbloxInfo() const {
++      return m_ctbloxInfo;
++    }
+     
+   private:
+     
+     Rc<vk::DeviceFn>      m_vkd;
+     VkSampler             m_sampler = VK_NULL_HANDLE;
++    DxvkSamplerCreateInfo m_ctbloxInfo = { };
+ 
+     static VkBorderColor getBorderColor(
+       const Rc<DxvkDevice>&         device,
 diff --git a/src/vulkan/vulkan_presenter.cpp b/src/vulkan/vulkan_presenter.cpp
 index b02869e..96d1e62 100644
 --- a/src/vulkan/vulkan_presenter.cpp
