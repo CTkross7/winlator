@@ -11,6 +11,33 @@ index 3dcad9b..460c2d9 100644
      }
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
+diff --git a/src/d3d11/d3d11_shader.cpp b/src/d3d11/d3d11_shader.cpp
+index 800bdea..bf6a576 100644
+--- a/src/d3d11/d3d11_shader.cpp
++++ b/src/d3d11/d3d11_shader.cpp
+@@ -1,4 +1,5 @@
+ #include "d3d11_device.h"
++#include <cstring>
+ #include "d3d11_shader.h"
+ 
+ namespace dxvk {
+@@ -24,7 +25,15 @@ namespace dxvk {
+     
+     // If requested by the user, dump both the raw DXBC
+     // shader and the compiled SPIR-V module to a file.
+-    const std::string dumpPath = env::getEnvVar("DXVK_SHADER_DUMP_PATH");
++    std::string dumpPath = env::getEnvVar("DXVK_SHADER_DUMP_PATH");
++
++    // ctblox: only the shaders Studio's UI uses are written, a full dump would be hundreds of files.
++    static const char* const dumpPrefixes[] = { "VS_0fca1620", "FS_29bea2b6", "FS_7f4caa76", "FS_b035876f" };
++    bool dumpMatch = false;
++    for (const char* prefix : dumpPrefixes)
++      dumpMatch = dumpMatch || name.compare(0, std::strlen(prefix), prefix) == 0;
++    if (!dumpMatch)
++      dumpPath.clear();
+     
+     if (dumpPath.size() != 0) {
+       reader.store(std::ofstream(str::tows(str::format(dumpPath, "/", name, ".dxbc").c_str()).c_str(),
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
 index 56c51a7..0d216f4 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
@@ -379,7 +406,7 @@ index f4debea..4d197bb 100644
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
 diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
-index 6d30088..bb3b70a 100644
+index 6d30088..b1f2e83 100644
 --- a/src/dxvk/dxvk_context.cpp
 +++ b/src/dxvk/dxvk_context.cpp
 @@ -1,11 +1,23 @@
@@ -406,10 +433,29 @@ index 6d30088..bb3b70a 100644
    
    DxvkContext::DxvkContext(const Rc<DxvkDevice>& device)
    : m_device      (device),
-@@ -1385,15 +1397,217 @@ namespace dxvk {
+@@ -1385,15 +1397,262 @@ namespace dxvk {
    }
    
    
++  void DxvkContext::ctbloxBeforeDraw() {
++    static const bool probeEnabled = !env::getEnvVar("CTBLOX_PROBE").empty();
++    const auto& rt = m_state.om.renderTargets.color[0];
++    if (!probeEnabled || rt.view == nullptr || rt.view->imageInfo().extent.width < 1000
++     || rt.view->imageInfo().format != VK_FORMAT_R8G8B8A8_UNORM || g_ctbloxProbes.load() >= 10)
++      return;
++
++    static const uint32_t probes[] = { 1, 2, 3, 4, 5, 6, 8, 12, 20, 40 };
++    for (uint32_t p : probes) {
++      if (p == m_ctbloxAppDraw + 1) {
++        // Count the samples this draw lets through the fragment tests.
++        m_ctbloxQuery = m_device->createGpuQuery(VK_QUERY_TYPE_OCCLUSION, 0, 0);
++        this->beginQuery(m_ctbloxQuery);
++        break;
++      }
++    }
++  }
++
++
 +  void DxvkContext::ctbloxAfterDraw() {
 +    m_ctbloxTraceActive = false;
 +
@@ -438,6 +484,9 @@ index 6d30088..bb3b70a 100644
 +      return;
 +
 +    static const uint32_t probes[] = { 1, 2, 3, 4, 5, 6, 8, 12, 20, 40 };
++    if (m_ctbloxQuery != nullptr)
++      this->endQuery(m_ctbloxQuery);
++
 +    for (uint32_t p : probes) {
 +      if (p == m_ctbloxAppDraw && g_ctbloxProbes.load() < 10) {
 +        g_ctbloxProbes++;
@@ -479,6 +528,19 @@ index 6d30088..bb3b70a 100644
 +      " srcA=", uint32_t(bl.srcAlphaBlendFactor()), " dstA=", uint32_t(bl.dstAlphaBlendFactor()),
 +      " cull=", uint32_t(m_state.gp.state.rs.cullMode()), " front=", uint32_t(m_state.gp.state.rs.frontFace()),
 +      " stride0=", m_state.vi.vertexStrides[0]));
++
++    if (rt.view != nullptr && rt.view->imageInfo().extent.width > 1000 && m_ctbloxVertexLogs < 3) {
++      const auto& gs = m_state.gp.state;
++      const auto& depthTarget = m_state.om.renderTargets.depth;
++      Logger::warn(str::format("ctblox:   state depthTest=", uint32_t(gs.ds.enableDepthTest()), " depthWrite=", uint32_t(gs.ds.enableDepthWrite()),
++        " depthOp=", uint32_t(gs.ds.depthCompareOp()), " stencil=", uint32_t(gs.ds.enableStencilTest()),
++        " depthView=", (depthTarget.view != nullptr ? 1 : 0),
++        " rsSamples=", uint32_t(gs.rs.sampleCount()), " msSamples=", uint32_t(gs.ms.sampleCount()), " sampleMask=", uint32_t(gs.ms.sampleMask()),
++        " a2c=", uint32_t(gs.ms.enableAlphaToCoverage()), " depthClip=", uint32_t(gs.rs.depthClipEnable()),
++        " poly=", uint32_t(gs.rs.polygonMode()), " targetSamples=", uint32_t(rt.view->imageInfo().sampleCount),
++        " swizzle=", gs.omSwizzle[0].rIndex(), gs.omSwizzle[0].gIndex(), gs.omSwizzle[0].bIndex(), gs.omSwizzle[0].aIndex(),
++        " viewSwizzle=", uint32_t(rt.view->info().swizzle.r), ",", uint32_t(rt.view->info().swizzle.g), ",", uint32_t(rt.view->info().swizzle.b), ",", uint32_t(rt.view->info().swizzle.a)));
++    }
 +
 +    if (rt.view != nullptr && rt.view->imageInfo().extent.width > 1000 && m_ctbloxVertexLogs < 6) {
 +      m_ctbloxVertexLogs++;
@@ -577,6 +639,15 @@ index 6d30088..bb3b70a 100644
 +    this->flushCommandList();
 +    m_device->waitForIdle();
 +
++    std::string samples = "n/a";
++    if (m_ctbloxQuery != nullptr) {
++      DxvkQueryData queryData = { };
++      DxvkGpuQueryStatus status = m_ctbloxQuery->getData(queryData);
++      samples = status == DxvkGpuQueryStatus::Available
++        ? str::format(queryData.occlusion.samplesPassed) : str::format("status", uint32_t(status));
++      m_ctbloxQuery = nullptr;
++    }
++
 +    const uint8_t* src = reinterpret_cast<const uint8_t*>(buffer->mapPtr(0));
 +    const size_t pixels = size_t(extent.width) * extent.height;
 +    uint64_t sum[4] = { 0, 0, 0, 0 };
@@ -599,7 +670,7 @@ index 6d30088..bb3b70a 100644
 +
 +    const size_t centerIndex = (size_t(extent.height / 2) * extent.width + extent.width / 2) * 4;
 +    const auto& fsShader = m_state.gp.shaders.fs;
-+    Logger::warn(str::format("ctblox: probe after app draw #", index, " fs=", (fsShader != nullptr ? fsShader->debugName() : std::string("-")),
++    Logger::warn(str::format("ctblox: probe after app draw #", index, " samplesPassed=", samples, " fs=", (fsShader != nullptr ? fsShader->debugName() : std::string("-")),
 +      " sc=", m_state.vp.scissorRects[0].extent.width, "x", m_state.vp.scissorRects[0].extent.height,
 +      " center=", uint32_t(src[centerIndex]), ",", uint32_t(src[centerIndex + 1]), ",", uint32_t(src[centerIndex + 2]), ",", uint32_t(src[centerIndex + 3]),
 +      " target=", extent.width, "x", extent.height,
@@ -617,6 +688,7 @@ index 6d30088..bb3b70a 100644
            uint32_t firstInstance) {
      if (this->commitGraphicsState<false, false>()) {
 +      this->ctbloxTraceDraw("draw", vertexCount, instanceCount);
++      this->ctbloxBeforeDraw();
        m_cmd->cmdDraw(
          vertexCount, instanceCount,
          firstVertex, firstInstance);
@@ -624,11 +696,12 @@ index 6d30088..bb3b70a 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -1445,10 +1659,12 @@ namespace dxvk {
+@@ -1445,10 +1704,13 @@ namespace dxvk {
            uint32_t vertexOffset,
            uint32_t firstInstance) {
      if (this->commitGraphicsState<true, false>()) {
 +      this->ctbloxTraceDraw("indexed", indexCount, instanceCount);
++      this->ctbloxBeforeDraw();
        m_cmd->cmdDrawIndexed(
          indexCount, instanceCount,
          firstIndex, vertexOffset,
@@ -637,7 +710,7 @@ index 6d30088..bb3b70a 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -4711,7 +4927,22 @@ namespace dxvk {
+@@ -4711,7 +4973,22 @@ namespace dxvk {
        m_flags.clr(DxvkContextFlag::GpDirtyViewport);
  
        uint32_t viewportCount = m_state.gp.state.rs.viewportCount();
@@ -661,7 +734,7 @@ index 6d30088..bb3b70a 100644
        m_cmd->cmdSetScissor (0, viewportCount, m_state.vp.scissorRects.data());
      }
  
-@@ -4803,8 +5034,10 @@ namespace dxvk {
+@@ -4803,8 +5080,10 @@ namespace dxvk {
    template<bool Indexed, bool Indirect>
    bool DxvkContext::commitGraphicsState() {
      if (m_flags.test(DxvkContextFlag::GpDirtyPipeline)) {
@@ -673,7 +746,7 @@ index 6d30088..bb3b70a 100644
      }
      
      if (m_state.gp.flags.any(DxvkGraphicsPipelineFlag::HasStorageDescriptors,
-@@ -4820,8 +5053,10 @@ namespace dxvk {
+@@ -4820,8 +5099,10 @@ namespace dxvk {
        this->startRenderPass();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyIndexBuffer) && Indexed) {
@@ -685,7 +758,7 @@ index 6d30088..bb3b70a 100644
      }
      
      if (m_flags.test(DxvkContextFlag::GpDirtyVertexBuffers))
-@@ -4833,8 +5068,10 @@ namespace dxvk {
+@@ -4833,8 +5114,10 @@ namespace dxvk {
        this->updateGraphicsShaderResources();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyPipelineState)) {
@@ -698,10 +771,10 @@ index 6d30088..bb3b70a 100644
      
      if (m_state.gp.flags.test(DxvkGraphicsPipelineFlag::HasTransformFeedback))
 diff --git a/src/dxvk/dxvk_context.h b/src/dxvk/dxvk_context.h
-index c5547c1..42dcce8 100644
+index c5547c1..c03f5b6 100644
 --- a/src/dxvk/dxvk_context.h
 +++ b/src/dxvk/dxvk_context.h
-@@ -1292,6 +1292,15 @@ namespace dxvk {
+@@ -1292,6 +1292,17 @@ namespace dxvk {
      
      template<bool Indexed, bool Indirect>
      bool commitGraphicsState();
@@ -709,6 +782,8 @@ index c5547c1..42dcce8 100644
 +    void ctbloxTraceDraw(const char* kind, uint32_t count, uint32_t instances);
 +    void ctbloxProbeTarget(uint32_t index);
 +    void ctbloxAfterDraw();
++    void ctbloxBeforeDraw();
++    Rc<DxvkGpuQuery> m_ctbloxQuery;
 +
 +    uint32_t m_ctbloxTraceIndex   = 0;
 +    uint32_t m_ctbloxAppDraw      = 0;
