@@ -379,7 +379,7 @@ index f4debea..4d197bb 100644
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
 diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
-index 6d30088..c24383f 100644
+index 6d30088..bb3b70a 100644
 --- a/src/dxvk/dxvk_context.cpp
 +++ b/src/dxvk/dxvk_context.cpp
 @@ -1,11 +1,23 @@
@@ -637,7 +637,31 @@ index 6d30088..c24383f 100644
      }
      
      m_cmd->addStatCtr(DxvkStatCounter::CmdDrawCalls, 1);
-@@ -4803,8 +5019,10 @@ namespace dxvk {
+@@ -4711,7 +4927,22 @@ namespace dxvk {
+       m_flags.clr(DxvkContextFlag::GpDirtyViewport);
+ 
+       uint32_t viewportCount = m_state.gp.state.rs.viewportCount();
+-      m_cmd->cmdSetViewport(0, viewportCount, m_state.vp.viewports.data());
++
++      // Diagnostic: CTBLOX_FLIPVP replaces negative-height viewports (D3D11's Y flip) with positive ones, so the picture
++      // ends up upside down but shows whether the driver mishandles negative viewport heights.
++      static const bool flipViewports = !env::getEnvVar("CTBLOX_FLIPVP").empty();
++      if (flipViewports) {
++        std::array<VkViewport, DxvkLimits::MaxNumViewports> viewports = m_state.vp.viewports;
++        for (uint32_t i = 0; i < viewportCount; i++) {
++          if (viewports[i].height < 0.0f) {
++            viewports[i].y += viewports[i].height;
++            viewports[i].height = -viewports[i].height;
++          }
++        }
++        m_cmd->cmdSetViewport(0, viewportCount, viewports.data());
++      } else {
++        m_cmd->cmdSetViewport(0, viewportCount, m_state.vp.viewports.data());
++      }
+       m_cmd->cmdSetScissor (0, viewportCount, m_state.vp.scissorRects.data());
+     }
+ 
+@@ -4803,8 +5034,10 @@ namespace dxvk {
    template<bool Indexed, bool Indirect>
    bool DxvkContext::commitGraphicsState() {
      if (m_flags.test(DxvkContextFlag::GpDirtyPipeline)) {
@@ -649,7 +673,7 @@ index 6d30088..c24383f 100644
      }
      
      if (m_state.gp.flags.any(DxvkGraphicsPipelineFlag::HasStorageDescriptors,
-@@ -4820,8 +5038,10 @@ namespace dxvk {
+@@ -4820,8 +5053,10 @@ namespace dxvk {
        this->startRenderPass();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyIndexBuffer) && Indexed) {
@@ -661,7 +685,7 @@ index 6d30088..c24383f 100644
      }
      
      if (m_flags.test(DxvkContextFlag::GpDirtyVertexBuffers))
-@@ -4833,8 +5053,10 @@ namespace dxvk {
+@@ -4833,8 +5068,10 @@ namespace dxvk {
        this->updateGraphicsShaderResources();
      
      if (m_flags.test(DxvkContextFlag::GpDirtyPipelineState)) {
