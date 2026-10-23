@@ -12,7 +12,7 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..175ae1d 100644
+index 56c51a7..a5c1957 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
 @@ -1,9 +1,21 @@
@@ -46,10 +46,90 @@ index 56c51a7..175ae1d 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +325,235 @@ namespace dxvk {
+@@ -311,6 +325,309 @@ namespace dxvk {
    }
  
  
++  // Minimal PNG writer (stored deflate blocks, no compression) so the files can be uploaded as ordinary images.
++  static void ctbloxWritePng(const std::string& path, uint32_t width, uint32_t height, uint32_t channels, const std::vector<uint8_t>& pixels) {
++    static uint32_t crcTable[256];
++    static bool crcInit = false;
++    if (!crcInit) {
++      for (uint32_t n = 0; n < 256; n++) {
++        uint32_t c = n;
++        for (int k = 0; k < 8; k++)
++          c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
++        crcTable[n] = c;
++      }
++      crcInit = true;
++    }
++
++    auto crc = [&] (const uint8_t* data, size_t size, uint32_t c) {
++      for (size_t i = 0; i < size; i++)
++        c = crcTable[(c ^ data[i]) & 0xFF] ^ (c >> 8);
++      return c;
++    };
++
++    std::vector<uint8_t> raw;
++    raw.reserve(size_t(height) * (size_t(width) * channels + 1));
++    for (uint32_t y = 0; y < height; y++) {
++      raw.push_back(0);
++      raw.insert(raw.end(), pixels.begin() + size_t(y) * width * channels, pixels.begin() + size_t(y + 1) * width * channels);
++    }
++
++    std::vector<uint8_t> z;
++    z.push_back(0x78);
++    z.push_back(0x01);
++    size_t pos = 0;
++    do {
++      size_t n = std::min<size_t>(65535, raw.size() - pos);
++      z.push_back(pos + n >= raw.size() ? 1 : 0);
++      z.push_back(uint8_t(n & 0xFF));
++      z.push_back(uint8_t(n >> 8));
++      z.push_back(uint8_t(~n & 0xFF));
++      z.push_back(uint8_t((~n >> 8) & 0xFF));
++      z.insert(z.end(), raw.begin() + pos, raw.begin() + pos + n);
++      pos += n;
++    } while (pos < raw.size());
++
++    uint32_t a = 1, b = 0;
++    for (uint8_t v : raw) {
++      a = (a + v) % 65521;
++      b = (b + a) % 65521;
++    }
++    uint32_t adler = (b << 16) | a;
++    for (int sh = 24; sh >= 0; sh -= 8)
++      z.push_back(uint8_t(adler >> sh));
++
++    std::ofstream file(path, std::ios::binary | std::ios::trunc);
++    const uint8_t sig[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
++    file.write(reinterpret_cast<const char*>(sig), 8);
++
++    auto chunk = [&] (const char* type, const std::vector<uint8_t>& data) {
++      std::vector<uint8_t> buf(4 + data.size());
++      std::memcpy(buf.data(), type, 4);
++      if (!data.empty())
++        std::memcpy(buf.data() + 4, data.data(), data.size());
++      uint32_t len = uint32_t(data.size());
++      uint8_t be[4] = { uint8_t(len >> 24), uint8_t(len >> 16), uint8_t(len >> 8), uint8_t(len) };
++      file.write(reinterpret_cast<const char*>(be), 4);
++      file.write(reinterpret_cast<const char*>(buf.data()), std::streamsize(buf.size()));
++      uint32_t c = crc(buf.data(), buf.size(), 0xFFFFFFFFu) ^ 0xFFFFFFFFu;
++      uint8_t ce[4] = { uint8_t(c >> 24), uint8_t(c >> 16), uint8_t(c >> 8), uint8_t(c) };
++      file.write(reinterpret_cast<const char*>(ce), 4);
++    };
++
++    std::vector<uint8_t> ihdr(13, 0);
++    ihdr[0] = uint8_t(width >> 24); ihdr[1] = uint8_t(width >> 16); ihdr[2] = uint8_t(width >> 8); ihdr[3] = uint8_t(width);
++    ihdr[4] = uint8_t(height >> 24); ihdr[5] = uint8_t(height >> 16); ihdr[6] = uint8_t(height >> 8); ihdr[7] = uint8_t(height);
++    ihdr[8] = 8;
++    ihdr[9] = channels == 3 ? 2 : 0;
++    chunk("IHDR", ihdr);
++    chunk("IDAT", z);
++    chunk("IEND", std::vector<uint8_t>());
++  }
++
++
 +  void D3D11SwapChain::DumpCapturedTextures(D3D11ImmediateContext* pContext) {
 +    std::vector<Rc<DxvkImage>> images;
 +    {
@@ -98,24 +178,12 @@ index 56c51a7..175ae1d 100644
 +        uint64_t sum[4] = { 0, 0, 0, 0 };
 +        size_t nonZero = 0, nonWhite = 0;
 +
-+        std::vector<uint8_t> bmp;
-+        const bool save = pixels <= 2200000;
-+        if (save) {
-+          bmp.assign(54 + pixels * 4, 0);
-+          uint8_t* hdr = bmp.data();
-+          uint32_t fileSize = uint32_t(bmp.size());
-+          uint32_t dataOffset = 54, infoSize = 40;
-+          int32_t  width = int32_t(extent.width), height = -int32_t(extent.height);
-+          uint16_t planes = 1, bpp = 32;
-+          hdr[0] = 'B'; hdr[1] = 'M';
-+          std::memcpy(hdr + 2, &fileSize, 4);
-+          std::memcpy(hdr + 10, &dataOffset, 4);
-+          std::memcpy(hdr + 14, &infoSize, 4);
-+          std::memcpy(hdr + 18, &width, 4);
-+          std::memcpy(hdr + 22, &height, 4);
-+          std::memcpy(hdr + 26, &planes, 2);
-+          std::memcpy(hdr + 28, &bpp, 2);
-+        }
++        // Large textures are written at reduced size (every step-th pixel) to keep the files uploadable.
++        uint32_t step = 1;
++        while (pixels / (size_t(step) * step) > 1000000)
++          step++;
++        const uint32_t outW = extent.width / step, outH = extent.height / step;
++        std::vector<uint8_t> rgb(size_t(outW) * outH * 3), alpha(size_t(outW) * outH);
 +
 +        for (size_t i = 0; i < pixels; i++) {
 +          uint8_t c0 = src[i * 4 + 0], c1 = src[i * 4 + 1], c2 = src[i * 4 + 2], a = src[i * 4 + 3];
@@ -126,22 +194,28 @@ index 56c51a7..175ae1d 100644
 +            nonZero++;
 +          if (!(r == 255 && c1 == 255 && b == 255 && a == 255))
 +            nonWhite++;
-+          if (save) {
-+            uint8_t* dst = bmp.data() + 54 + i * 4;
-+            dst[0] = b; dst[1] = c1; dst[2] = r; dst[3] = 255;
++        }
++
++        for (uint32_t y = 0; y < outH; y++) {
++          for (uint32_t x = 0; x < outW; x++) {
++            const uint8_t* px = src + (size_t(y * step) * extent.width + size_t(x * step)) * 4;
++            uint8_t* o = rgb.data() + (size_t(y) * outW + x) * 3;
++            o[0] = swapRB ? px[0] : px[2];
++            o[1] = px[1];
++            o[2] = swapRB ? px[2] : px[0];
++            alpha[size_t(y) * outW + x] = px[3];
 +          }
 +        }
 +
-+        std::string path = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, ".bmp");
-+        if (save) {
-+          std::ofstream file(path, std::ios::binary | std::ios::trunc);
-+          file.write(reinterpret_cast<const char*>(bmp.data()), std::streamsize(bmp.size()));
-+        }
++        std::string path = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, "_rgb.png");
++        std::string pathA = str::format(dir, "ctblox_tex_", extent.width, "x", extent.height, "_", number, "_alpha.png");
++        ctbloxWritePng(path, outW, outH, 3, rgb);
++        ctbloxWritePng(pathA, outW, outH, 1, alpha);
 +
 +        Logger::warn(str::format("ctblox: texture ", extent.width, "x", extent.height, " fmt=", uint32_t(format),
 +          " nonZeroPixels=", nonZero, " nonWhitePixels=", nonWhite,
 +          " avgRGBA=", sum[0] / pixels, ",", sum[1] / pixels, ",", sum[2] / pixels, ",", sum[3] / pixels,
-+          save ? str::format(" saved to ", path) : std::string(" (too large to save)")));
++          " saved to ", path, " and ", pathA, " step=", step));
 +        number++;
 +      }
 +    });
