@@ -12,7 +12,7 @@ index 3dcad9b..460c2d9 100644
      
      if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
 diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
-index 56c51a7..481a0ce 100644
+index 56c51a7..54a3d69 100644
 --- a/src/d3d11/d3d11_swapchain.cpp
 +++ b/src/d3d11/d3d11_swapchain.cpp
 @@ -1,9 +1,17 @@
@@ -42,7 +42,7 @@ index 56c51a7..481a0ce 100644
      // Bump our frame id.
      ++m_frameId;
      
-@@ -311,6 +321,130 @@ namespace dxvk {
+@@ -311,6 +321,131 @@ namespace dxvk {
    }
  
  
@@ -154,7 +154,8 @@ index 56c51a7..481a0ce 100644
 +        " max=", maxV[0], ",", maxV[1], ",", maxV[2], ",", maxV[3],
 +        " pixels with alpha<255: ", transparent));
 +
-+      g_ctbloxTraceDraws = 40;
++      if (!env::getEnvVar("CTBLOX_TRACE").empty())
++        g_ctbloxTraceDraws = 40;
 +      DxvkStatCounters stats = device->getStatCounters();
 +      Logger::warn(str::format("ctblox: skipped draws noPipeline=", uint64_t(g_ctbloxSkippedDraws[0]),
 +        " noPipelineHandle=", uint64_t(g_ctbloxSkippedDraws[1]), " noIndexBuffer=", uint64_t(g_ctbloxSkippedDraws[2])));
