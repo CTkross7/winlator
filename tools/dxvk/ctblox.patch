@@ -406,7 +406,7 @@ index f4debea..4d197bb 100644
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
 diff --git a/src/dxbc/dxbc_compiler.cpp b/src/dxbc/dxbc_compiler.cpp
-index 01420c0..5f2b251 100644
+index 01420c0..92a313e 100644
 --- a/src/dxbc/dxbc_compiler.cpp
 +++ b/src/dxbc/dxbc_compiler.cpp
 @@ -1,4 +1,5 @@
@@ -415,15 +415,71 @@ index 01420c0..5f2b251 100644
  
  namespace dxvk {
  
-@@ -5978,6 +5979,12 @@ namespace dxvk {
+@@ -5978,6 +5979,68 @@ namespace dxvk {
        uint32_t typeId = getVectorTypeId(vector.type);
        vector.id = m_module.opCompositeConstruct(typeId, vector.type.ccount, scalars.data());
  
 +      // Diagnostic: CTBLOX_FORCEPS makes every D3D11 pixel shader output opaque red. If the screen then turns red the
 +      // pipeline, render target and display path work and the shaders' own colour is the problem.
-+      static const bool forcePs = !env::getEnvVar("CTBLOX_FORCEPS").empty();
-+      if (forcePs && vector.type.ctype == DxbcScalarType::Float32 && vector.type.ccount == 4)
++      // CTBLOX_FORCEPS=1 outputs plain red. CTBLOX_FORCEPS=2 draws 32 pixel wide vertical stripes that repeat left to
++      // right: (A) vertex colour rgb, (B) vertex colour alpha as grey, (C) r0 rgb (usually the sampled texel),
++      // (D) r0 alpha as grey. All of them are opaque, so blending cannot hide them.
++      static const int forcePs = std::atoi(env::getEnvVar("CTBLOX_FORCEPS").c_str());
++      if (forcePs == 1 && vector.type.ctype == DxbcScalarType::Float32 && vector.type.ccount == 4)
 +        vector.id = emitBuildConstVecf32(1.0f, 0.0f, 0.0f, 1.0f, DxbcRegMask(true, true, true, true)).id;
++      else if (forcePs >= 2 && vector.type.ctype == DxbcScalarType::Float32 && vector.type.ccount == 4
++            && m_programInfo.type() == DxbcProgramType::PixelShader && i == 0) {
++        uint32_t f32 = getScalarTypeId(DxbcScalarType::Float32);
++        uint32_t u32 = getScalarTypeId(DxbcScalarType::Uint32);
++        uint32_t v4  = getVectorTypeId({ DxbcScalarType::Float32, 4 });
++        uint32_t bv4 = m_module.defVectorType(m_module.defBoolType(), 4);
++
++        if (m_ps.builtinFragCoord == 0) {
++          m_ps.builtinFragCoord = emitNewBuiltinVariable({
++            { DxbcScalarType::Float32, 4, 0 },
++            spv::StorageClassInput },
++            spv::BuiltInFragCoord,
++            "ps_frag_coord");
++        }
++        DxbcRegisterPointer fcPtr;
++        fcPtr.type = { DxbcScalarType::Float32, 4 };
++        fcPtr.id = m_ps.builtinFragCoord;
++        DxbcRegisterValue fc = emitValueLoad(fcPtr);
++        uint32_t idx0 = 0;
++        uint32_t fx = m_module.opCompositeExtract(f32, fc.id, 1, &idx0);
++        uint32_t band = m_module.opBitwiseAnd(u32,
++          m_module.opShiftRightLogical(u32, m_module.opConvertFtoU(u32, fx), m_module.constu32(5)),
++          m_module.constu32(3));
++
++        uint32_t zero4 = emitBuildConstVecf32(0.0f, 0.0f, 0.0f, 0.0f, DxbcRegMask(true, true, true, true)).id;
++        uint32_t one4  = emitBuildConstVecf32(1.0f, 1.0f, 1.0f, 1.0f, DxbcRegMask(true, true, true, true)).id;
++
++        uint32_t vtx = zero4;
++        if (m_vRegs.at(2).id != 0 && m_vRegs.at(2).type.ctype == DxbcScalarType::Float32 && m_vRegs.at(2).type.ccount == 4)
++          vtx = emitValueLoad(m_vRegs.at(2)).id;
++        uint32_t r0 = zero4;
++        if (!m_rRegs.empty() && m_rRegs[0] != 0)
++          r0 = m_module.opLoad(v4, m_rRegs[0]);
++
++        const uint32_t rgb1[4] = { 0, 1, 2, 4 };
++        const uint32_t a3 = 3;
++        auto grey = [&](uint32_t v) {
++          uint32_t a = m_module.opCompositeExtract(f32, v, 1, &a3);
++          uint32_t c[4] = { a, a, a, m_module.constf32(1.0f) };
++          return m_module.opCompositeConstruct(v4, 4, c);
++        };
++        auto sel = [&](uint32_t n, uint32_t x, uint32_t y) {
++          uint32_t b = m_module.opIEqual(m_module.defBoolType(), band, m_module.constu32(n));
++          uint32_t bb[4] = { b, b, b, b };
++          return m_module.opSelect(v4, m_module.opCompositeConstruct(bv4, 4, bb), x, y);
++        };
++
++        uint32_t stripeA = m_module.opVectorShuffle(v4, vtx, one4, 4, rgb1);
++        uint32_t stripeB = grey(vtx);
++        uint32_t stripeC = m_module.opVectorShuffle(v4, r0, one4, 4, rgb1);
++        uint32_t stripeD = grey(r0);
++        vector.id = sel(0, stripeA, sel(1, stripeB, sel(2, stripeC, stripeD)));
++      }
 +
        // Replace NaN by zero if requested
        if (m_moduleInfo.options.enableRtOutputNanFixup && vector.type.ctype == DxbcScalarType::Float32) {
