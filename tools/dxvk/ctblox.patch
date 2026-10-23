@@ -405,6 +405,29 @@ index f4debea..4d197bb 100644
      void SubmitPresent(
              D3D11ImmediateContext*  pContext,
        const vk::PresenterSync&      Sync,
+diff --git a/src/dxbc/dxbc_compiler.cpp b/src/dxbc/dxbc_compiler.cpp
+index 01420c0..5f2b251 100644
+--- a/src/dxbc/dxbc_compiler.cpp
++++ b/src/dxbc/dxbc_compiler.cpp
+@@ -1,4 +1,5 @@
+ #include "dxbc_compiler.h"
++#include "../util/util_env.h"
+ 
+ namespace dxvk {
+ 
+@@ -5978,6 +5979,12 @@ namespace dxvk {
+       uint32_t typeId = getVectorTypeId(vector.type);
+       vector.id = m_module.opCompositeConstruct(typeId, vector.type.ccount, scalars.data());
+ 
++      // Diagnostic: CTBLOX_FORCEPS makes every D3D11 pixel shader output opaque red. If the screen then turns red the
++      // pipeline, render target and display path work and the shaders' own colour is the problem.
++      static const bool forcePs = !env::getEnvVar("CTBLOX_FORCEPS").empty();
++      if (forcePs && vector.type.ctype == DxbcScalarType::Float32 && vector.type.ccount == 4)
++        vector.id = emitBuildConstVecf32(1.0f, 0.0f, 0.0f, 1.0f, DxbcRegMask(true, true, true, true)).id;
++
+       // Replace NaN by zero if requested
+       if (m_moduleInfo.options.enableRtOutputNanFixup && vector.type.ctype == DxbcScalarType::Float32) {
+         uint32_t boolType = m_module.defBoolType();
 diff --git a/src/dxvk/dxvk_context.cpp b/src/dxvk/dxvk_context.cpp
 index 6d30088..17783ee 100644
 --- a/src/dxvk/dxvk_context.cpp
